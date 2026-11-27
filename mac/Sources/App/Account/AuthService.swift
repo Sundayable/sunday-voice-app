@@ -24,6 +24,7 @@ extension ASWebAuthenticationSession: AuthWebSession {}
 protocol AuthStorage: AnyObject {
     var refreshToken: String? { get set }
     var profile: Data? { get set }
+    var acceptedConsent: String? { get set }
 }
 
 @MainActor
@@ -40,6 +41,13 @@ private final class KeychainAuthStorage: AuthStorage {
         set {
             if let newValue { UserDefaults.standard.set(newValue, forKey: "profile") }
             else { UserDefaults.standard.removeObject(forKey: "profile") }
+        }
+    }
+    var acceptedConsent: String? {
+        get { UserDefaults.standard.string(forKey: "acceptedConsent") }
+        set {
+            if let newValue { UserDefaults.standard.set(newValue, forKey: "acceptedConsent") }
+            else { UserDefaults.standard.removeObject(forKey: "acceptedConsent") }
         }
     }
 }
@@ -65,6 +73,7 @@ final class AuthService: NSObject, ObservableObject, AccessTokenProvider, ASWebA
 
     @Published private(set) var user: UserProfile?
     @Published private(set) var consentRequired = true
+    @Published private(set) var consentChecked = false
     @Published private(set) var consentVersion: String?
     @Published private(set) var signingIn = false
     @Published private(set) var browserRecoveryAvailable = false
@@ -102,17 +111,25 @@ final class AuthService: NSObject, ObservableObject, AccessTokenProvider, ASWebA
         self.signInTimeout = signInTimeout
         self.environment = environment
         super.init()
-        if let data = self.storage.profile, self.storage.refreshToken != nil {
-            user = try? JSONDecoder().decode(UserProfile.self, from: data)
+        if let data = self.storage.profile, self.storage.refreshToken != nil,
+           let decoded = try? JSONDecoder().decode(UserProfile.self, from: data) {
+            user = decoded
+            if let cached = self.storage.acceptedConsent, cached.hasPrefix("\(decoded.id)|") {
+                let version = String(cached.dropFirst(decoded.id.count + 1))
+                if !version.isEmpty {
+                    consentVersion = version
+                    consentRequired = false
+                }
+            }
         }
     }
 
     var isSignedIn: Bool { user != nil && !consentRequired }
 
     /// Screenshot gallery only: show a signed-in state without touching the keychain.
-    func previewSignedIn(_ profile: UserProfile?) { user = profile; consentRequired = profile == nil; consentVersion = "2026-10-16.1" }
+    func previewSignedIn(_ profile: UserProfile?) { user = profile; consentRequired = profile == nil; consentChecked = true; consentVersion = "2026-10-16.1" }
 
-    func previewNeedsConsent() { consentRequired = true; consentVersion = "2026-10-16.1" }
+    func previewNeedsConsent() { consentRequired = true; consentChecked = true; consentVersion = "2026-10-16.1" }
 
     // MARK: PKCE
 
@@ -314,23 +331,33 @@ final class AuthService: NSObject, ObservableObject, AccessTokenProvider, ASWebA
         let expiresIn = object["expires_in"] as? Double ?? 3600
         access = (token, Date().addingTimeInterval(expiresIn - 60))
         storage.refreshToken = refresh
-        applyConsent(object["consent"] as? [String: Any])
         if let raw = object["user"], let data = try? JSONSerialization.data(withJSONObject: raw),
            let profile = try? JSONDecoder().decode(UserProfile.self, from: data) {
             user = profile
             storage.profile = data
         }
+        applyConsent(object["consent"] as? [String: Any])
     }
 
     private func applyConsent(_ object: [String: Any]?) {
         consentVersion = object?["version"] as? String
         consentRequired = object?["required"] as? Bool ?? true
+        consentChecked = true
+        if !consentRequired, let id = user?.id, let version = consentVersion, !version.isEmpty {
+            storage.acceptedConsent = "\(id)|\(version)"
+        } else {
+            storage.acceptedConsent = nil
+        }
     }
 
     var onDiagnosticError: ((String) -> Void)?
     func reportClientError(_ code: String) async { onDiagnosticError?(code) }
 
-    func consentReviewRequired() async { consentRequired = true }
+    func consentReviewRequired() async {
+        consentRequired = true
+        consentChecked = true
+        storage.acceptedConsent = nil
+    }
 
     func refreshConsent() async throws {
         guard let baseURL else { throw AuthError.notConfigured }
@@ -340,7 +367,12 @@ final class AuthService: NSObject, ObservableObject, AccessTokenProvider, ASWebA
         request.timeoutInterval = 20
         let (data, response) = try await sendRequest(request)
         guard generation == identity else { throw AuthError.signedOut }
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { consentRequired = true; throw AuthError.server("consent_unavailable") }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            consentRequired = true
+            consentChecked = true
+            storage.acceptedConsent = nil
+            throw AuthError.server("consent_unavailable")
+        }
         applyConsent(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
@@ -415,9 +447,10 @@ final class AuthService: NSObject, ObservableObject, AccessTokenProvider, ASWebA
 
     private func forget() {
         invalidatePendingWork()
-        access = nil; user = nil; consentRequired = true; consentVersion = nil
+        access = nil; user = nil; consentRequired = true; consentChecked = false; consentVersion = nil
         storage.refreshToken = nil
         storage.profile = nil
+        storage.acceptedConsent = nil
     }
 
     // MARK: http

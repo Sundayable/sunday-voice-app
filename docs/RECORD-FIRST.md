@@ -2,7 +2,8 @@
 
 Since 0.3.16 a meeting is only **recorded** while it runs. The transcript, with speakers
 separated, is written on the same Mac after the call. This replaces the earlier design that
-decoded 20-second chunks live during the meeting.
+decoded 20-second chunks live during the meeting. `IMPLEMENTATION.md` still describes detection,
+capture recovery and calendars, which are unchanged.
 
 ## Why it changed
 
@@ -86,7 +87,8 @@ Nothing leaves the Mac from the app. A finished meeting is a folder whose `Trans
   `transcription` (models, languages, audio and processing seconds, speaker count); `recording`
   (start/end instants, time zone, meeting app and window, calendar match with invitees).
 
-Downstream summarization tools can read the finalized folder directly on disk; nothing leaves the Mac from the app.
+Sundayable's own hand-off to the meeting digest is a separate script outside this app (see
+`cloud-ops`), run on the owner's Mac. It is not part of the distributed product.
 
 ## Diagnostics
 

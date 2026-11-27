@@ -9,7 +9,7 @@ struct OnboardingView: View {
     var body: some View {
         let _ = lang.revision
         HStack(spacing: 0) {
-            Rail(step: model.step, facts: model.facts, isGuest: model.isGuest)
+            Rail(step: model.step, facts: model.facts, hidesCloudSteps: model.hidesCloudSteps)
                 .frame(width: 196)
                 .background(scheme == .dark ? Theme.ink.opacity(0.55) : Theme.surface.opacity(0.6))
             Rectangle().fill(Theme.rule(scheme)).frame(width: 1)
@@ -48,8 +48,8 @@ struct OnboardingView: View {
 private struct Rail: View {
     let step: OnboardingStep
     let facts: OnboardingFlow.Facts
-    var isGuest: Bool
-    private var visibleSteps: [OnboardingStep] { OnboardingStep.allCases.filter { !isGuest || ($0 != .connect && $0 != .voice) } }
+    var hidesCloudSteps: Bool
+    private var visibleSteps: [OnboardingStep] { OnboardingStep.allCases.filter { !hidesCloudSteps || ($0 != .connect && $0 != .voice) } }
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -114,6 +114,9 @@ private struct Footer: View {
             }
             if model.step == .done {
                 Button(L("ob.done.finish", AppIdentity.name)) { model.finish() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
+            } else if model.step == .signIn && model.auth.user == nil {
+                Button(L("ob.welcome.startLocal")) { model.next() }
+                    .buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
             } else if model.step != .signIn || model.facts.signedIn {
                 Button(L("ob.continue")) { model.next() }
                     .buttonStyle(PrimaryButton()).disabled(!model.canContinue).keyboardShortcut(.defaultAction)
@@ -223,7 +226,7 @@ struct SignInStep: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Image(nsImage: AppIdentity.icon).resizable().frame(width: 64, height: 64).padding(.bottom, 18)
+            Image(nsImage: AppIdentity.icon).resizable().frame(width: 52, height: 52).padding(.bottom, 14)
             StepHeader(L("ob.welcome.title"), L("ob.welcome.body"))
             if let user = model.auth.user {
                 Card(highlighted: true) {
@@ -231,39 +234,65 @@ struct SignInStep: View {
                         Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 22)).foregroundStyle(Theme.approval)
                         Text(verbatim: L("ob.welcome.signedIn", user.email)).font(Theme.text(14, medium: true))
                     }
-                }.frame(maxWidth: 420)
+                }.frame(maxWidth: 460)
             } else {
-                Button { model.signIn() } label: {
-                    HStack(spacing: 10) {
-                        GoogleMark().frame(width: 18, height: 18)
-                        Text(verbatim: L("ob.welcome.google")).font(.system(size: 14, weight: .semibold))
-                    }
-                    .padding(.horizontal, 20).padding(.vertical, 11)
-                    .foregroundStyle(Color(white: 0.12))
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.black.opacity(0.14)))
-                    .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
-                }
-                .buttonStyle(.plain)
-                .disabled(model.auth.signingIn)
-                if model.auth.signingIn {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text(verbatim: L("ob.welcome.signingIn")).font(Theme.text(13)) }
-                        HStack(spacing: 16) {
-                            if model.auth.browserRecoveryAvailable {
-                                Button(L("ob.welcome.openBrowser")) { model.auth.continueSignInInBrowser() }
+                VStack(alignment: .leading, spacing: 12) {
+                    Card(highlighted: true) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text(verbatim: L("ob.welcome.local.title")).font(Theme.display(16))
+                                Spacer(minLength: 4)
+                                Chip(text: L("ob.welcome.local.badge"), ok: true)
                             }
-                            Button(L("menu.cancel")) { model.auth.cancelSignIn() }.keyboardShortcut(.cancelAction)
+                            Text(verbatim: L("ob.welcome.local.body"))
+                                .font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                                .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
                         }
-                        .buttonStyle(.link).font(Theme.text(13))
                     }
-                    .padding(.top, 12).foregroundStyle(Theme.muted(scheme))
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(verbatim: L("ob.welcome.pro.title")).font(Theme.display(15))
+                                Text(verbatim: L("ob.welcome.pro.badge").uppercased()).font(Theme.label(10)).foregroundStyle(Theme.muted(scheme))
+                            }
+                            Text(verbatim: L("ob.welcome.pro.body"))
+                                .font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                                .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
+                            Button { model.signIn() } label: {
+                                HStack(spacing: 10) {
+                                    GoogleMark().frame(width: 17, height: 17)
+                                    Text(verbatim: L("ob.welcome.pro.google")).font(.system(size: 13.5, weight: .semibold))
+                                }
+                                .padding(.horizontal, 16).padding(.vertical, 9)
+                                .foregroundStyle(Color(white: 0.12))
+                                .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.black.opacity(0.14)))
+                                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(model.auth.signingIn)
+                            if model.auth.signingIn {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text(verbatim: L("ob.welcome.signingIn")).font(Theme.text(12.5)) }
+                                    HStack(spacing: 16) {
+                                        if model.auth.browserRecoveryAvailable {
+                                            Button(L("ob.welcome.openBrowser")) { model.auth.continueSignInInBrowser() }
+                                        }
+                                        Button(L("menu.cancel")) { model.auth.cancelSignIn() }.keyboardShortcut(.cancelAction)
+                                    }
+                                    .buttonStyle(.link).font(Theme.text(12.5))
+                                }
+                                .foregroundStyle(Theme.muted(scheme))
+                            }
+                            if let error = model.signInError {
+                                Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red)
+                            }
+                        }
+                    }
                 }
-                if let error = model.signInError {
-                    Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red).padding(.top, 10)
-                }
+                .frame(maxWidth: 492)
             }
-            Text(verbatim: L("ob.welcome.fine")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme)).padding(.top, 22)
+            Text(verbatim: L("ob.welcome.fine")).font(Theme.text(12)).foregroundStyle(Theme.muted(scheme)).padding(.top, 14)
         }
     }
 }

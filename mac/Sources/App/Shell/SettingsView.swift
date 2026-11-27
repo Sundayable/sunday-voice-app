@@ -35,14 +35,16 @@ struct SettingsView: View {
     private var pane: Pane { navigation.pane }
     var meetings: MeetingCoordinator? = nil
     var onSignOut: () -> Void
+    var onLocalDictationToggled: ((Bool) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
 
     init(model: OnboardingModel, words: VocabularyModel, pane: Pane = .account,
          meetings: MeetingCoordinator? = nil, navigation: SettingsNavigation? = nil,
-         onSignOut: @escaping () -> Void) {
+         onSignOut: @escaping () -> Void, onLocalDictationToggled: ((Bool) -> Void)? = nil) {
         self.model = model; self.words = words; self.meetings = meetings
         self.navigation = navigation ?? SettingsNavigation(pane: pane)
         self.onSignOut = onSignOut
+        self.onLocalDictationToggled = onLocalDictationToggled
     }
 
     var body: some View {
@@ -75,24 +77,30 @@ struct SettingsView: View {
             Group {
                 if pane == .words {
                     // Has its own scrolling list; give it the pane's exact size so it can never widen the window.
-                    VocabularyView(model: words, embedded: true, isGuest: model.isGuest).padding(32)
+                    VocabularyView(model: words, embedded: true, isGuest: model.isGuest, isSignedOut: model.isLocalOnly,
+                                   onOpenAccount: { navigation.pane = .account }).padding(32)
                 } else {
                     ScrollView {
                         Group {
                             switch pane {
                             case .account: AccountPane(model: model, onSignOut: onSignOut)
                             case .keys: KeysStep(model: model)
-                            case .voice: VoicePane(model: model)
+                            case .voice: VoicePane(model: model, onOpenAccount: { navigation.pane = .account })
                             case .words: EmptyView()
                             case .meetings:
                                 if let meetings { MeetingSettingsView(coordinator: meetings, isGuest: model.isGuest) }
                                 else { Text("Meeting transcription stays on this Mac.") }
-                            case .general: GeneralPane(onSoundsChange: model.engine.updateSoundsEnabled,
+                            case .general: GeneralPane(isSignedIn: model.auth.isSignedIn,
+                                                       onSoundsChange: model.engine.updateSoundsEnabled,
                                                        onRecentContextChange: model.engine.updateRecentContextEnabled,
                                                        onScreenContextChange: model.engine.updateScreenContextEnabled,
-                                                       onLocalDictationChange: model.engine.updateLocalDictationEnabled,
+                                                       onLocalDictationChange: { on in
+                                                           model.engine.updateLocalDictationEnabled(on)
+                                                           onLocalDictationToggled?(on)
+                                                       },
                                                        localModelReady: model.engine.localTranscriber?.isReady ?? (meetings?.modelReady ?? false),
                                                        onOpenMeetings: { navigation.pane = .meetings },
+                                                       onOpenAccount: { navigation.pane = .account },
                                                        onClipboardChange: model.engine.updateKeepTranscriptOnClipboard)
                             }
                         }
@@ -116,50 +124,122 @@ private struct AccountPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             StepHeader(L("settings.account"), L("settings.account.body"))
-            Card {
-                HStack(spacing: 12) {
-                    Image(systemName: "person.crop.circle.fill").font(.system(size: 30)).foregroundStyle(Theme.muted(scheme))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: model.auth.user?.name ?? "—").font(Theme.display(16))
-                        Text(verbatim: model.auth.user?.email ?? L("settings.signedOut")).font(Theme.text(13)).foregroundStyle(Theme.muted(scheme))
+            if let user = model.auth.user {
+                Card {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle.fill").font(.system(size: 30)).foregroundStyle(Theme.muted(scheme))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: user.name ?? "—").font(Theme.display(16))
+                            Text(verbatim: user.email).font(Theme.text(13)).foregroundStyle(Theme.muted(scheme))
+                        }
+                        Spacer()
+                        Button(L("menu.signOut"), action: onSignOut).buttonStyle(GhostButton())
                     }
-                    Spacer()
-                    Button(L("menu.signOut"), action: onSignOut).buttonStyle(GhostButton())
                 }
-            }
-            .frame(maxWidth: 520)
-            Text(verbatim: L("settings.connections").uppercased()).font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme)).padding(.top, 6)
-            if model.isGuest {
-                Text(verbatim: L("settings.guestNoConnections")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme)).frame(maxWidth: 520, alignment: .leading)
+                .frame(maxWidth: 520)
+                Text(verbatim: L("settings.connections").uppercased()).font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme)).padding(.top, 6)
+                if model.isGuest {
+                    Text(verbatim: L("settings.guestNoConnections")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme)).frame(maxWidth: 520, alignment: .leading)
+                } else {
+                    VStack(spacing: 10) {
+                        ConnectRow(symbol: "envelope.fill", title: L("ob.connect.gmail"), status: model.connections["gmail"] ?? "not_connected", disconnect: { model.disconnect("gmail") }, disconnecting: model.disconnecting.contains("gmail")) { model.connect("gmail") }
+                        ConnectRow(symbol: "number", title: L("ob.connect.slack"), status: model.connections["slack"] ?? "not_connected", disconnect: { model.disconnect("slack") }, disconnecting: model.disconnecting.contains("slack")) { model.connect("slack") }
+                    }
+                    .frame(maxWidth: 520)
+                }
+                if let error = model.connectionError { Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red) }
             } else {
-                VStack(spacing: 10) {
-                    ConnectRow(symbol: "envelope.fill", title: L("ob.connect.gmail"), status: model.connections["gmail"] ?? "not_connected", disconnect: { model.disconnect("gmail") }, disconnecting: model.disconnecting.contains("gmail")) { model.connect("gmail") }
-                    ConnectRow(symbol: "number", title: L("ob.connect.slack"), status: model.connections["slack"] ?? "not_connected", disconnect: { model.disconnect("slack") }, disconnecting: model.disconnecting.contains("slack")) { model.connect("slack") }
+                Card(highlighted: true) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "laptopcomputer").font(.system(size: 24)).foregroundStyle(Theme.approval)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(verbatim: L("settings.account.localTitle")).font(Theme.display(16))
+                            Text(verbatim: L("settings.account.localBody")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 4)
+                        Chip(text: L("ob.welcome.local.badge"), ok: true)
+                    }
+                }
+                .frame(maxWidth: 520)
+                Card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(verbatim: L("ob.welcome.pro.title")).font(Theme.display(16))
+                            Text(verbatim: L("ob.welcome.pro.badge").uppercased()).font(Theme.label(10)).foregroundStyle(Theme.muted(scheme))
+                        }
+                        Text(verbatim: L("ob.welcome.pro.body"))
+                            .font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button { model.signIn() } label: {
+                            HStack(spacing: 10) {
+                                GoogleMark().frame(width: 17, height: 17)
+                                Text(verbatim: L("ob.welcome.pro.google")).font(.system(size: 13.5, weight: .semibold))
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 9)
+                            .foregroundStyle(Color(white: 0.12))
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.black.opacity(0.14)))
+                            .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.auth.signingIn)
+                        if model.auth.signingIn {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(verbatim: L("ob.welcome.signingIn")).font(Theme.text(12.5)) }
+                                HStack(spacing: 16) {
+                                    if model.auth.browserRecoveryAvailable {
+                                        Button(L("ob.welcome.openBrowser")) { model.auth.continueSignInInBrowser() }
+                                    }
+                                    Button(L("menu.cancel")) { model.auth.cancelSignIn() }.keyboardShortcut(.cancelAction)
+                                }
+                                .buttonStyle(.link).font(Theme.text(12.5))
+                            }
+                            .foregroundStyle(Theme.muted(scheme))
+                        }
+                        if let error = model.signInError {
+                            Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red)
+                        }
+                    }
                 }
                 .frame(maxWidth: 520)
             }
-            if let error = model.connectionError { Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red) }
         }
     }
 }
 
 private struct VoicePane: View {
     @ObservedObject var model: OnboardingModel
+    var onOpenAccount: () -> Void
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             StepHeader(L("ob.voice.title"), L("ob.voice.body"))
-            HStack(alignment: .top, spacing: 12) {
-                CardEditor(model: model, lang: "ko", title: L("ob.voice.ko"))
-                CardEditor(model: model, lang: "en", title: L("ob.voice.en"))
-            }
-            if let error = model.voiceError { Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red) }
-            HStack(spacing: 12) {
-                if !model.isGuest {
-                    Button(model.buildingVoice ? L("ob.voice.building") : L("vocab.refresh")) { model.buildVoice() }
-                        .buttonStyle(GhostButton()).disabled(model.buildingVoice)
+            if model.isLocalOnly {
+                Card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(verbatim: L("settings.proFeature.voiceTitle")).font(Theme.display(16))
+                        Text(verbatim: L("settings.proFeature.voiceBody"))
+                            .font(Theme.text(13)).foregroundStyle(Theme.muted(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(L("settings.proFeature.openAccount"), action: onOpenAccount).buttonStyle(GhostButton())
+                    }
                 }
-                if let s = model.voiceStats {
-                    Text(verbatim: L("ob.voice.stats", "\(s.gmail_messages)", "\(s.slack_messages)")).font(Theme.label(10.5))
+                .frame(maxWidth: 520)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    CardEditor(model: model, lang: "ko", title: L("ob.voice.ko"))
+                    CardEditor(model: model, lang: "en", title: L("ob.voice.en"))
+                }
+                if let error = model.voiceError { Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red) }
+                HStack(spacing: 12) {
+                    if !model.isGuest {
+                        Button(model.buildingVoice ? L("ob.voice.building") : L("vocab.refresh")) { model.buildVoice() }
+                            .buttonStyle(GhostButton()).disabled(model.buildingVoice)
+                    }
+                    if let s = model.voiceStats {
+                        Text(verbatim: L("ob.voice.stats", "\(s.gmail_messages)", "\(s.slack_messages)")).font(Theme.label(10.5))
+                    }
                 }
             }
         }
@@ -198,12 +278,14 @@ struct SettingsToggleRow: View {
 }
 
 private struct GeneralPane: View {
+    var isSignedIn: Bool
     var onSoundsChange: (Bool) -> Void
     var onRecentContextChange: (Bool) -> Void
     var onScreenContextChange: (Bool) -> Void
     var onLocalDictationChange: (Bool) -> Void
     var localModelReady: Bool
     var onOpenMeetings: () -> Void
+    var onOpenAccount: () -> Void
     var onClipboardChange: (Bool) -> Void
     @State private var keepOnClipboard = Prefs.keepTranscriptOnClipboard
     @State private var sounds = Prefs.soundsEnabled
@@ -243,10 +325,18 @@ private struct GeneralPane: View {
                         Prefs.useScreenContext = on; onScreenContextChange(on)
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        SettingsToggleRow(title: L("settings.localDictation"), detail: L("settings.localDictation.body"), isOn: $localDictation) { on in
+                        SettingsToggleRow(title: L("settings.localDictation"),
+                                          detail: isSignedIn ? L("settings.localDictation.body") : L("settings.localDictation.signedOutBody"),
+                                          isOn: isSignedIn ? $localDictation : .constant(true)) { on in
+                            guard isSignedIn else { return }
                             Prefs.localDictationEnabled = on; onLocalDictationChange(on)
                         }
-                        if localDictation {
+                        .disabled(!isSignedIn)
+                        if !isSignedIn {
+                            Button(L("settings.proFeature.openAccount"), action: onOpenAccount)
+                                .buttonStyle(.link).font(Theme.text(11.5))
+                        }
+                        if !isSignedIn || localDictation {
                             if localModelReady {
                                 Label {
                                     Text(verbatim: UILanguage.isKorean

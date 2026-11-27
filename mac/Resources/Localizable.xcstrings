@@ -1107,18 +1107,17 @@
       }
     },
     "ob.step.signin": {
-      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sign in"
+            "value": "Start"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "로그인"
+            "value": "시작하기"
           }
         }
       }
@@ -1345,18 +1344,17 @@
       }
     },
     "ob.welcome.fine": {
-      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Setup takes about two minutes. Review the Terms and Privacy notice before you start."
+            "value": "Setup takes about two minutes. You can switch between Free Local Mode and Pro anytime in Settings."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "설정은 2분쯤 걸려요. 시작 전에 약관과 개인정보 처리방침을 확인해 주세요."
+            "value": "설정은 2분쯤 걸려요. 설정에서 무료 로컬 모드와 Pro를 언제든 전환할 수 있어요."
           }
         }
       }
@@ -5249,6 +5247,278 @@
           "stringUnit": {
             "state": "translated",
             "value": "설정"
+          }
+        }
+      }
+    },
+    "ob.welcome.startLocal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start free (Local Mode)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드로 시작"
+          }
+        }
+      }
+    },
+    "ob.welcome.local.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Local Mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드"
+          }
+        }
+      }
+    },
+    "ob.welcome.local.badge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default · Free"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 · 무료"
+          }
+        }
+      }
+    },
+    "ob.welcome.local.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation and meeting transcripts stay on this Mac using Whisper large-v3-turbo. No account required."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 없이 이 Mac에서 Whisper large-v3-turbo로 받아쓰기와 미팅 전사를 바로 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "ob.welcome.pro.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro (Google sign-in)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro (Google 로그인)"
+          }
+        }
+      }
+    },
+    "ob.welcome.pro.badge": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional upgrade"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택 업그레이드"
+          }
+        }
+      }
+    },
+    "ob.welcome.pro.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud dictation, AI rewrite in your writing style, and Gmail & Slack vocabulary."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클라우드 받아쓰기, 내 말투 AI 다듬기, Gmail·Slack 단어 학습이 필요할 때 로그인해 보세요."
+          }
+        }
+      }
+    },
+    "ob.welcome.pro.google": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with Google for Pro"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google로 Pro 로그인"
+          }
+        }
+      }
+    },
+    "menu.upgradePro": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upgrade to Pro (Sign in)…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 업그레이드 (로그인)…"
+          }
+        }
+      }
+    },
+    "settings.account.localTitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Local Mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드"
+          }
+        }
+      }
+    },
+    "settings.account.localBody": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running locally on this Mac with zero cloud calls. Sign in anytime to unlock Pro cloud features."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외부 서버 호출 없이 이 Mac에서 로컬로 실행 중이에요. 언제든 로그인해서 Pro 기능을 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.localDictation.signedOutBody": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active by default while signed out. Sign in with Google under Account to switch to Pro cloud dictation."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그아웃 상태에서는 무료 로컬 모드가 기본이에요. 계정 탭에서 Google로 로그인하면 Pro 클라우드 모드를 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.proFeature.voiceTitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personal voice cards are a Pro feature"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내 말투 학습은 Pro 기능이에요"
+          }
+        }
+      }
+    },
+    "settings.proFeature.voiceBody": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Local Mode transcribes cleanly on this Mac without an account. Sign in with Google under Account to learn your writing style from Gmail and Slack."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드는 로그인 없이 이 Mac에서 깔끔하게 받아써요. Gmail·Slack에서 내 말투를 학습하려면 계정 탭에서 Google로 로그인해 주세요."
+          }
+        }
+      }
+    },
+    "settings.proFeature.wordsTitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud vocabulary sync is a Pro feature"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클라우드 단어장 동기화는 Pro 기능이에요"
+          }
+        }
+      }
+    },
+    "settings.proFeature.wordsBody": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Local Mode uses on-device speech recognition and local replacements without an account. Sign in with Google under Account to sync personal terms from Gmail and Slack."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드는 로그인 없이 이 Mac의 로컬 음성 인식과 치환 사전을 사용해요. Gmail·Slack에서 내 단어를 가져오려면 계정 탭에서 Google로 로그인해 주세요."
+          }
+        }
+      }
+    },
+    "settings.proFeature.openAccount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Account settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계정 설정 열기"
           }
         }
       }

@@ -45,8 +45,15 @@ final class AppTests: XCTestCase {
     func testFlowGates() {
         let granted = PermissionState(microphone: .authorized, accessibility: true)
         var f = OnboardingFlow.Facts(signedIn: false, permissions: PermissionState(), micHeard: false, hasTrigger: true)
+        // Signed-out users start in Free Local Mode without a login gate.
+        XCTAssertTrue(OnboardingFlow.canContinue(.signIn, f))
+        XCTAssertEqual(OnboardingFlow.resumeStep(f, completed: false), .signIn)
+        XCTAssertEqual(OnboardingFlow.resumeStep(f, completed: true), .permissions)
+        // Active consent requirement still blocks until accepted.
+        f.needsConsent = true
         XCTAssertFalse(OnboardingFlow.canContinue(.signIn, f))
         XCTAssertEqual(OnboardingFlow.resumeStep(f, completed: true), .signIn)
+        f.needsConsent = false
         f.signedIn = true
         XCTAssertEqual(OnboardingFlow.resumeStep(f, completed: true), .permissions)
         XCTAssertFalse(OnboardingFlow.canContinue(.permissions, f))
@@ -60,6 +67,38 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(OnboardingFlow.canContinue(.connect, f)) // optional steps never block
         f.hasTrigger = false
         XCTAssertFalse(OnboardingFlow.canContinue(.keys, f))
+    }
+
+    func testSignedOutStartsInFreeLocalModeAndSkipsCloudSteps() {
+        let savedLocal = UserDefaults.standard.object(forKey: "localDictationEnabled")
+        defer {
+            if let savedLocal { UserDefaults.standard.set(savedLocal, forKey: "localDictationEnabled") }
+            else { UserDefaults.standard.removeObject(forKey: "localDictationEnabled") }
+        }
+        UserDefaults.standard.removeObject(forKey: "localDictationEnabled")
+
+        let auth = AuthService(storage: MemoryAuthStorage())
+        let model = OnboardingModel(auth: auth, api: APIClient(auth: auth), monitor: PermissionMonitor(), engine: MockDictationEngine())
+        XCTAssertTrue(model.isLocalOnly)
+        XCTAssertTrue(model.effectiveLocalDictation)
+        XCTAssertTrue(model.hidesCloudSteps)
+        XCTAssertTrue(model.canContinue)
+
+        // Signed-out onboarding skips cloud-only Connect and Voice steps.
+        model.step = .keys
+        model.next()
+        XCTAssertEqual(model.step, .tryIt)
+        model.back()
+        XCTAssertEqual(model.step, .keys)
+
+        // Signed-in Pro user defaults to Cloud mode and sees full onboarding steps.
+        auth.previewSignedIn(UserProfile(id: "pro", email: "pro@sundayable.com", name: "Pro", picture: nil))
+        XCTAssertFalse(model.isLocalOnly)
+        XCTAssertFalse(model.effectiveLocalDictation)
+        XCTAssertFalse(model.hidesCloudSteps)
+        model.step = .keys
+        model.next()
+        XCTAssertEqual(model.step, .connect)
     }
 
     func testTriggerIdentityTracksPhysicalInputAcrossModes() {
