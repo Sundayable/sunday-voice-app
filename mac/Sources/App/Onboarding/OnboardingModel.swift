@@ -25,6 +25,7 @@ enum OnboardingStep: Int, CaseIterable, Identifiable {
 enum OnboardingFlow {
     struct Facts: Equatable {
         var signedIn: Bool
+        var needsConsent: Bool = false
         var permissions: PermissionState
         var micHeard: Bool
         var hasTrigger: Bool
@@ -32,7 +33,7 @@ enum OnboardingFlow {
 
     static func canContinue(_ step: OnboardingStep, _ f: Facts) -> Bool {
         switch step {
-        case .signIn: return f.signedIn
+        case .signIn: return !f.needsConsent
         case .permissions: return f.permissions.allGranted
         case .mic: return f.micHeard
         case .keys: return f.hasTrigger
@@ -41,9 +42,10 @@ enum OnboardingFlow {
     }
 
     /// Where a (re)launch should resume: the first step whose requirement is unmet.
+    /// Signed-out users start directly in Free Local Mode without a login wall.
     static func resumeStep(_ f: Facts, completed: Bool) -> OnboardingStep? {
-        if !f.signedIn { return .signIn }
-        if !f.permissions.allGranted { return .permissions }
+        if f.needsConsent { return .signIn }
+        if !f.permissions.allGranted { return completed ? .permissions : .signIn }
         return completed ? nil : .mic
     }
 }
@@ -73,6 +75,10 @@ final class OnboardingModel: ObservableObject {
         tryText = tryText.isEmpty ? trimmed : tryText + (tryText.hasSuffix(" ") || tryText.hasSuffix("\n") ? "" : " ") + trimmed
     }
     @Published var signInError: String?
+    @Published var billing: BillingSummary?
+    @Published var loadingBilling = false
+    @Published var billingActionPending = false
+    @Published var billingError: String?
     @Published var retryVisible: Set<Permission> = []
 
     let auth: AuthService
@@ -82,6 +88,7 @@ final class OnboardingModel: ObservableObject {
     var onFinish: (() -> Void)?
     var startEngine: (() -> Void)?
     var openWords: (() -> Void)?
+    var onAuthChanged: (() -> Void)?
     private var pollTask: Task<Void, Never>?
     private var stateTimer: Timer?
     private var authObserver: AnyCancellable?
@@ -99,9 +106,16 @@ final class OnboardingModel: ObservableObject {
     }
 
     var facts: OnboardingFlow.Facts {
-        .init(signedIn: auth.isSignedIn, permissions: permissions, micHeard: micHeard, hasTrigger: !triggers.isEmpty)
+        .init(signedIn: auth.isSignedIn,
+              needsConsent: auth.user != nil && auth.consentRequired,
+              permissions: permissions,
+              micHeard: micHeard,
+              hasTrigger: !triggers.isEmpty)
     }
     var canContinue: Bool { OnboardingFlow.canContinue(step, facts) }
+    /// Signed-out users run 100% locally by default; signed-in Pro users keep cloud mode unless they opt in.
+    var isLocalOnly: Bool { auth.user == nil }
+    var effectiveLocalDictation: Bool { auth.user == nil || Prefs.localDictationEnabled }
 
     // MARK: lifecycle
 
@@ -136,6 +150,7 @@ final class OnboardingModel: ObservableObject {
         connections = ["gmail": "not_connected", "slack": "not_connected"]
         disconnecting = []
         connectionError = nil; voiceError = nil; signInError = nil
+        billing = nil; billingError = nil; loadingBilling = false; billingActionPending = false
         tryText = ""; micHeard = false; buildingVoice = false
         Prefs.onboardingCompleted = false
         begin()
@@ -143,6 +158,8 @@ final class OnboardingModel: ObservableObject {
 
     func didSignIn() {
         guard auth.isSignedIn else { return }
+        onAuthChanged?()
+        Task { await loadBilling() }
         if step == .signIn { next() }
         if permissions.allGranted { startEngine?() }
     }
@@ -160,9 +177,10 @@ final class OnboardingModel: ObservableObject {
         if permissions.allGranted { startEngine?() }
     }
 
-    /// Guests have no Gmail/Slack connections, so the connect and voice-import steps are skipped.
+    /// Guests have no Gmail/Slack connections; signed-out local users skip cloud-only connect and voice steps.
     var isGuest: Bool { auth.user?.guest == true }
-    private var steps: [OnboardingStep] { OnboardingStep.allCases.filter { !isGuest || ($0 != .connect && $0 != .voice) } }
+    var hidesCloudSteps: Bool { isGuest || isLocalOnly }
+    private var steps: [OnboardingStep] { OnboardingStep.allCases.filter { !hidesCloudSteps || ($0 != .connect && $0 != .voice) } }
 
     func next() {
         let steps = self.steps
@@ -441,6 +459,66 @@ final class OnboardingModel: ObservableObject {
     func connectedCallback(_ url: URL) {
         NSApp.activate(ignoringOtherApps: true)
         Task { await loadVoice() }
+    }
+
+    // MARK: billing
+
+    func loadBilling() async {
+        guard auth.user != nil, !isPreview else { return }
+        loadingBilling = true
+        defer { loadingBilling = false }
+        do {
+            let summary = try await api.me()
+            billing = summary.billing
+            billingError = nil
+        } catch {
+            // Keep prior billing state if a background refresh fails transiently.
+        }
+    }
+
+    func upgradeToPro() {
+        guard auth.user != nil, !billingActionPending else { return }
+        billingActionPending = true
+        billingError = nil
+        Task {
+            defer { billingActionPending = false }
+            do {
+                let url = try await api.startProCheckout()
+                NSWorkspace.shared.open(url)
+            } catch APIError.http(_, let code) where code == "billing_not_configured" {
+                billingError = L("billing.error.notConfigured")
+            } catch {
+                billingError = L("billing.error.checkout")
+            }
+        }
+    }
+
+    func manageSubscription() {
+        guard auth.user != nil, !billingActionPending else { return }
+        billingActionPending = true
+        billingError = nil
+        Task {
+            defer { billingActionPending = false }
+            do {
+                let url = try await api.openBillingPortal()
+                NSWorkspace.shared.open(url)
+            } catch APIError.http(_, let code) where code == "no_billing_account" {
+                billingError = L("billing.error.noAccount")
+            } catch APIError.http(_, let code) where code == "billing_not_configured" {
+                billingError = L("billing.error.notConfigured")
+            } catch {
+                billingError = L("billing.error.portal")
+            }
+        }
+    }
+
+    /// `<scheme>://billing?status=…` from Stripe Checkout / Customer Portal return page.
+    func billingCallback(_ url: URL) {
+        NSApp.activate(ignoringOtherApps: true)
+        Task {
+            await loadBilling()
+            onAuthChanged?()
+        }
     }
 
     var anyConnected: Bool { connections.values.contains("active") }

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var api = APIClient(auth: auth)
     lazy var diagnostics = Diagnostics(auth: auth, api: api)
     private var consentObserver: AnyCancellable?
+    private var consentPromptObserver: AnyCancellable?
     private var transcriptionObserver: AnyCancellable?
     private var languageObserver: NSObjectProtocol?
     private var consentTimer: Timer?
@@ -124,20 +125,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         auth.onDiagnosticError = { [weak self] code in self?.diagnostics.event(DiagnosticEvent("client_error", errorCode: code)) }
         engine.onDiagnostic = { [weak self] in self?.diagnostics.event($0) }
-        consentObserver = auth.$consentRequired.removeDuplicates().sink { [weak self] required in
+        consentObserver = auth.$consentRequired.removeDuplicates().dropFirst().sink { [weak self] required in
             Task { @MainActor in
                 guard let self else { return }
                 if required {
-                    self.engine.stop()
-                    self.diagnostics.reset()
-                    if self.auth.user != nil { self.showOnboarding(at: .signIn) }
+                    if self.auth.user != nil {
+                        self.engine.stop()
+                        self.diagnostics.reset()
+                    }
                 } else {
                     self.diagnostics.begin()
+                    self.buildMenu()
                     if PermissionMonitor.read(previous: nil).allGranted { self.startEngine() }
+                    self.render(self.engine.state)
                 }
             }
         }
-        if auth.user != nil { Task { try? await auth.refreshConsent() } }
+        consentPromptObserver = auth.$consentRequired.combineLatest(auth.$consentChecked).removeDuplicates { $0 == $1 }.sink { [weak self] required, checked in
+            Task { @MainActor in
+                guard let self else { return }
+                if required {
+                    if self.auth.user != nil && checked { self.showOnboarding(at: .signIn) }
+                } else if self.onboardingWindow?.isVisible == true, self.onboarding?.step == .signIn,
+                          Prefs.onboardingCompleted, PermissionMonitor.read(previous: nil).allGranted {
+                    self.onboardingWindow?.close()
+                }
+            }
+        }
+        if auth.user != nil {
+            if auth.isSignedIn { diagnostics.begin() }
+            Task {
+                do { try await auth.refreshConsent() }
+                catch {
+                    if self.auth.user != nil && self.auth.consentRequired {
+                        self.showOnboarding(at: .signIn)
+                    }
+                }
+            }
+        }
         consentTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in guard let self, self.auth.user != nil else { return }; try? await self.auth.refreshConsent() }
         }
@@ -153,15 +178,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Task { await self.engine.retryTranscription(id: record.id) }
             case .microphoneSettings: NSWorkspace.shared.open(SettingsLink.url(.microphone))
             case .accessibilitySettings: NSWorkspace.shared.open(SettingsLink.url(.accessibility))
+            case .openAccount: self?.openAccountSettings()
             default: break
             }
         }
         let tryItCheck = CommandLine.arguments.contains("--tryit-check") && UserDefaults.standard.bool(forKey: "diagnostics")
         if !tryItCheck { updateLoginItem() } // a diagnostics copy must never take over the login item
         let permissions = PermissionMonitor.read(previous: nil)
-        // Dictation works as soon as sign-in (or Free Local Mode) and permissions are in place, even mid-setup.
-        if (auth.isSignedIn || Prefs.localDictationEnabled) && permissions.allGranted { startEngine() }
-        if !Prefs.onboardingCompleted || (!auth.isSignedIn && !Prefs.localDictationEnabled) || !permissions.allGranted { showOnboarding() }
+        let needsBlockingConsent = auth.user != nil && auth.consentRequired
+        // Dictation works as soon as permissions are in place (Free Local Mode by default when signed out;
+        // Pro cloud mode once signed in and consented).
+        if (auth.isSignedIn || auth.user == nil) && permissions.allGranted { startEngine() }
+        if !Prefs.onboardingCompleted || !permissions.allGranted || (needsBlockingConsent && auth.consentChecked) { showOnboarding() }
         if tryItCheck { Task { await runTryItCheck(URL(string: "\(AppIdentity.urlScheme)://diagnostic/tryit")!) } }
     }
 
@@ -177,6 +205,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if url.host == "connected" {
                 onboarding?.connectedCallback(url)
                 settingsModel?.connectedCallback(url)
+            }
+            if url.host == "billing" {
+                onboarding?.billingCallback(url)
+                settingsModel?.billingCallback(url)
             }
             if url.host == "auth" { auth.handleCallback(url); NSApp.activate(ignoringOtherApps: true) }
             if url.host == "diagnostic", !meetingCaptureActive, !endingSession, UserDefaults.standard.bool(forKey: "diagnostics") {
@@ -203,8 +235,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Signed-out users start in Free Local Mode by default; signed-in Pro users keep cloud mode unless they opt in.
+    var effectiveLocalDictation: Bool { auth.user == nil || Prefs.localDictationEnabled }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if Prefs.onboardingCompleted && auth.isSignedIn { openSettings() } else { showOnboarding() }
+        if Prefs.onboardingCompleted && !(auth.user != nil && auth.consentRequired) { openSettings() } else { showOnboarding() }
         return true
     }
 
@@ -223,15 +258,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func startEngine() {
         guard !meetingCaptureActive, !endingSession else { return }
         meetings.startMonitoring()
-        guard let base = AppIdentity.apiBaseURL, auth.isSignedIn || Prefs.localDictationEnabled else { return }
+        let local = effectiveLocalDictation
+        guard auth.isSignedIn || (auth.user == nil && local) else { return }
+        guard let base = AppIdentity.apiBaseURL ?? (local ? URL(string: "https://localhost") : nil) else { return }
         let config = EngineConfiguration(apiBaseURL: base, triggers: Prefs.triggers, soundsEnabled: Prefs.soundsEnabled,
                                          useRecentContext: Prefs.useRecentContext,
                                          useScreenContext: Prefs.useScreenContext,
-                                         localDictationEnabled: Prefs.localDictationEnabled,
+                                         localDictationEnabled: local,
                                          keepTranscriptOnClipboard: Prefs.keepTranscriptOnClipboard)
         do { try engine.start(configuration: config, tokens: auth) } catch EngineError.inputMonitoringMissing {
             monitor.markInputMonitoringNeeded(); showOnboarding()
         } catch { showOnboarding() }
+    }
+
+    private func handleAuthChanged() {
+        buildMenu()
+        if PermissionMonitor.read(previous: nil).allGranted { startEngine() }
+        render(engine.state)
     }
 
     func render(_ state: EngineState) {
@@ -254,12 +297,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             title = UILanguage.isKorean
                 ? "미팅 전사 중 · \(summary.etaLabel)"
                 : "Transcribing meeting · \(summary.etaLabel)"
-        } else if case .idle = state, Prefs.localDictationEnabled {
+        } else if case .idle = state, effectiveLocalDictation {
             title = UILanguage.isKorean ? "\(L("menu.ready")) · 로컬 모드" : "\(L("menu.ready")) · Local"
         }
         info.title = title
         header.state = title
-        header.account = auth.user?.email ?? (Prefs.localDictationEnabled ? (UILanguage.isKorean ? "오프라인 모드" : "Offline mode") : nil)
+        header.account = auth.user?.email ?? (UILanguage.isKorean ? "무료 로컬 모드" : "Free Local Mode")
         // Brand letterform in the menu bar; a small system glyph beside it carries the live state.
         status?.button?.image = MenuStyle.statusImage
         status?.button?.imagePosition = .imageLeading
@@ -287,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .server("audio_partial_saved"): return L("dictation.partialSaved")
         case .server("local_storage_unavailable"): return L("dictation.storageUnavailable")
         case .server("local_model_missing"): return L("dictation.localModelMissing")
+        case .server("subscription_required"), .server("STT_subscription_required"): return L("error.subscriptionRequired")
         case .server(let code) where code == "secure_field": return L("error.password")
         default: return L("error.couldNotFinish", "\(e)")
         }
@@ -294,6 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static func action(_ e: EngineError) -> HUDAction {
         switch e {
         case .server("audio_saved"), .server("audio_partial_saved"): return .retryTranscription
+        case .server("subscription_required"), .server("STT_subscription_required"): return .openAccount
         case .microphoneDenied: return .microphoneSettings
         case .accessibilityMissing, .inputMonitoringMissing: return .accessibilitySettings
         default: return .close
@@ -322,7 +367,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tidyItem.title = L("menu.tidy"); tidyItem.target = self; tidyItem.action = #selector(tidyClipboard)
         MenuStyle.apply(tidyItem); menu.addItem(tidyItem)
         showTidyShortcut(Prefs.tidyShortcuts.first)
-        add(menu, L("menu.refreshVoice"), #selector(refreshVoice))
+        if auth.isSignedIn && auth.user?.guest != true {
+            add(menu, L("menu.refreshVoice"), #selector(refreshVoice))
+        }
         add(menu, L("menu.myWords"), #selector(openWords))
         add(menu, L("menu.settings"), #selector(openSettings)).keyEquivalent = ","
         menu.addItem(.separator())
@@ -343,7 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if auth.isSignedIn {
             add(menu, L("menu.signOut"), #selector(signOut))
         } else {
-            add(menu, UILanguage.isKorean ? "로그인…" : "Sign in…", #selector(openSetup))
+            add(menu, L("menu.upgradePro"), #selector(openAccountSettings))
         }
         add(menu, MenuStyle.quitTitle, #selector(quit)).keyEquivalent = "q"
         status.menu = menu
@@ -507,27 +554,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bugWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc func refreshVoice() { if auth.user?.guest == true { openSettings(); return }; showOnboarding(at: .voice) }
+    @objc func refreshVoice() { if auth.user?.guest == true || auth.user == nil { openSettings(); return }; showOnboarding(at: .voice) }
     @objc func openSetup() { showOnboarding() }
+    @objc func openAccountSettings() { settingsNavigation.pane = .account; openSettings() }
     @objc func openSettings() {
         guard !meetingCaptureActive else { meetings.presentManualStart(); return }
         if settingsWindow == nil {
             let model = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
+            model.startEngine = { [weak self] in self?.startEngine() }
+            model.onAuthChanged = { [weak self] in self?.handleAuthChanged() }
             settingsModel = model
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 600), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             w.contentMinSize = NSSize(width: 720, height: 520)
             w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isReleasedWhenClosed = false
             model.applyTidyKeys = { [weak self] in self?.applyTidyKeys($0) ?? [] }
-            w.contentView = NSHostingView(rootView: SettingsView(model: model, words: VocabularyModel(api: api), meetings: meetings, navigation: settingsNavigation, onSignOut: { [weak self] in self?.signOut() }))
+            w.contentView = NSHostingView(rootView: SettingsView(model: model, words: VocabularyModel(api: api), meetings: meetings, navigation: settingsNavigation, onSignOut: { [weak self] in self?.signOut() }, onLocalDictationToggled: { [weak self] _ in
+                guard let self else { return }
+                self.render(self.engine.state)
+            }))
             w.center(); settingsWindow = w
         }
         settingsModel?.triggers = Prefs.triggers
         settingsModel?.tidyKeys = Prefs.tidyShortcuts
-        if let model = settingsModel { Task { await model.loadVoice() } }
+        if let model = settingsModel { Task { await model.loadVoice(); await model.loadBilling() } }
         settingsWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc func openWords() {
+        if auth.user == nil { settingsNavigation.pane = .words; openSettings(); return }
         if wordsWindow == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 620), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isReleasedWhenClosed = false
@@ -550,11 +604,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             meetings.googleCalendar.disconnect()
             meetingCaptureActive = false
             await auth.signOut { [weak self] in
-                self?.diagnostics.reset(); self?.bugWindow?.close(); self?.bugWindow = nil
-                self?.onboarding?.resetForSignIn()
-                self?.showOnboarding(at: .signIn)
-                self?.render(.idle)
-                self?.endingSession = false
+                guard let self else { return }
+                self.diagnostics.reset(); self.bugWindow?.close(); self.bugWindow = nil
+                self.endingSession = false
+                self.buildMenu()
+                if Prefs.onboardingCompleted && PermissionMonitor.read(previous: nil).allGranted {
+                    self.startEngine()
+                } else {
+                    self.onboarding?.resetForSignIn()
+                    self.showOnboarding(at: .signIn)
+                }
+                self.render(self.engine.state)
             }
         }
     }
@@ -571,8 +631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         meetings.googleCalendar.loginHint = { [weak self] in self?.auth.user?.email }
         meetings.onCalendarSynchronized = { [weak self] in self?.watchRecordingCalendarSync.tick() }
         meetings.googleCalendar.accessAllowed = { [weak self] in
-            guard let user = self?.auth.user else { return false }
-            return user.guest != true
+            self?.auth.user?.guest != true
         }
         meetings.canStartRecording = { [weak self] in
             guard let self, !self.endingSession else { return false }
@@ -644,7 +703,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               let wav = Bundle.main.url(forResource: "mixed", withExtension: "wav"), let data = try? Data(contentsOf: wav) else { return }
         let modes = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "mode" }?.value ?? "bilingual,english")
             .split(separator: ",").compactMap { DictationMode(rawValue: String($0)) }
-        if !auth.isSignedIn { try? await auth.signIn() } // Debug builds: dev-login from the environment
+        if !auth.isSignedIn && ProcessInfo.processInfo.environment["SUNDAY_VOICE_DEV_LOGIN_SECRET"] != nil { try? await auth.signIn() } // Debug builds: dev-login from the environment
         startEngine()
         showOnboarding(at: .tryIt)
         var rows: [[String: Any]] = []
@@ -695,6 +754,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if onboardingWindow == nil {
             let model = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
             model.startEngine = { [weak self] in self?.startEngine() }
+            model.onAuthChanged = { [weak self] in self?.handleAuthChanged() }
             model.openWords = { [weak self] in self?.openWords() }
             model.applyTidyKeys = { [weak self] in self?.applyTidyKeys($0) ?? [] }
             model.onFinish = { [weak self] in self?.onboardingWindow?.close(); self?.startEngine() }

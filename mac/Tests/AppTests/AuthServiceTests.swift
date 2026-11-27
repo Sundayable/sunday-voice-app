@@ -428,6 +428,39 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertTrue(rig.auth.isSignedIn)
         await rig.auth.consentReviewRequired()
         XCTAssertFalse(rig.auth.isSignedIn)
+        XCTAssertNil(rig.storage.acceptedConsent)
+    }
+
+    func testReturningSignedInUserSkipsRelaunchConsentFlashUntilServerRequiresReview() async throws {
+        let rig = AuthRig(); defer { rig.close() }
+        try rig.auth.store(tokens("returning"))
+        let accept = rig.run { try await rig.auth.refreshConsent() }
+        try await eventually { rig.requests.count == 1 }
+        rig.requests[0].reply(["version": "2026-10-16.1", "required": false])
+        try await success(accept)
+        XCTAssertTrue(rig.auth.isSignedIn)
+        XCTAssertEqual(rig.storage.acceptedConsent, "returning|2026-10-16.1")
+
+        // Simulate app relaunch with persisted Keychain/UserDefaults state: no initial consentRequired flash.
+        var relaunchRequests: [PendingAuthRequest] = []
+        let relaunchAuth = AuthService(storage: rig.storage, request: { request in
+            try await withCheckedThrowingContinuation { relaunchRequests.append(PendingAuthRequest(request, $0)) }
+        }, baseURL: URL(string: "https://auth-tests.invalid")!, environment: [:])
+        XCTAssertEqual(relaunchAuth.user?.id, "returning")
+        XCTAssertFalse(relaunchAuth.consentRequired)
+        XCTAssertTrue(relaunchAuth.isSignedIn)
+
+        // If the server later bumps the terms version, fail closed and clear cached consent.
+        let check = rig.run { try await relaunchAuth.refreshConsent() }
+        try await eventually { relaunchRequests.count == 1 }
+        // First request is token refresh (no in-memory access token after relaunch).
+        relaunchRequests[0].reply(tokens("returning"))
+        try await eventually { relaunchRequests.count == 2 }
+        relaunchRequests[1].reply(["version": "2026-11-27.1", "required": true])
+        try await success(check)
+        XCTAssertTrue(relaunchAuth.consentRequired)
+        XCTAssertFalse(relaunchAuth.isSignedIn)
+        XCTAssertNil(rig.storage.acceptedConsent)
     }
 
     private func tokens(_ id: String, expires: Double = 3600) -> [String: Any] {
@@ -484,6 +517,7 @@ private final class AuthOperation<T> {
 final class MemoryAuthStorage: AuthStorage {
     var refreshToken: String?
     var profile: Data?
+    var acceptedConsent: String?
 }
 
 @MainActor

@@ -27,6 +27,23 @@ struct VocabList: Codable, Equatable {
     var terms: [VocabEntry]; var stats: Stats
 }
 
+struct BillingSummary: Codable, Equatable {
+    var plan: String
+    var status: String
+    var entitled: Bool
+    var pro_required: Bool
+    var price_usd_monthly: Int
+    var current_period_end: String?
+    var cancel_at_period_end: Bool
+    var has_customer: Bool
+    var checkout_available: Bool
+}
+
+struct AccountSummary: Codable, Equatable {
+    var plan: String
+    var billing: BillingSummary?
+}
+
 /// JSON endpoints the app shell uses (the engine has its own client for the hot path).
 @MainActor
 final class APIClient: WatchRecordingCalendarAPI {
@@ -84,10 +101,14 @@ final class APIClient: WatchRecordingCalendarAPI {
     }
 
     struct Link: Decodable { var redirect_url: URL; var connection_id: String }
+    struct BillingLink: Decodable { var url: URL; var already_subscribed: Bool? }
     struct CardResponse: Decodable { var card: VoiceCard }
     struct Words: Decodable { var words: [String] }
     struct OK: Decodable { var ok: Bool }
 
+    func me() async throws -> AccountSummary { try await call("GET", "api/me", as: AccountSummary.self) }
+    func startProCheckout() async throws -> URL { try await call("POST", "api/billing/checkout", body: ["source": "app"], as: BillingLink.self).url }
+    func openBillingPortal() async throws -> URL { try await call("POST", "api/billing/portal", body: ["source": "app"], as: BillingLink.self).url }
     func voice() async throws -> VoiceSummary { try await call("GET", "api/voice", as: VoiceSummary.self) }
     func link(_ toolkit: String) async throws -> URL { try await call("POST", "api/connections/\(toolkit)/link", as: Link.self).redirect_url }
     func disconnect(_ toolkit: String) async throws { _ = try await call("DELETE", "api/connections/\(toolkit)", as: OK.self) }

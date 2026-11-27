@@ -88,6 +88,7 @@ final class ServerClient: Rewriter, @unchecked Sendable {
                 .flatMap { ($0["error"] as? [String: Any])?["code"] as? String }
             switch http.statusCode {
             case 401: throw FailureCode.notSignedIn
+            case 402: throw FailureCode(code ?? "subscription_required")
             case 429: throw code == "quota_exceeded" ? FailureCode.quotaExceeded : FailureCode("rate_limited")
             default: throw FailureCode(code ?? "http_\(http.statusCode)")
             }
@@ -116,7 +117,7 @@ final class ServerClient: Rewriter, @unchecked Sendable {
     }
 
     func mintSTTSession() async throws -> STTSessionGrant {
-        let data = try await data { try await request("api/stt/session", body: ["languages": ["ko", "en"]]) }
+        let data = try await data { try await request("api/stt/session", body: ["languages": SpeechLanguagePolicy.allowedLanguages]) }
         return try JSONDecoder().decode(STTSessionGrant.self, from: data)
     }
 

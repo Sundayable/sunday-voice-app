@@ -7,7 +7,7 @@ import WhisperKit
 /// Injects local AX screen terms and personal vocabulary via `DecodingOptions.promptTokens`.
 public actor WhisperLocalDictation {
     public static let backendIdentifier = "whisperkit-large-v3-turbo"
-    private static let allowedLanguages: Set<String> = ["ko", "en"]
+    public static var allowedLanguages: [String] { SpeechLanguagePolicy.allowedLanguages }
 
     public nonisolated let directory: URL
     private var engine: WhisperKit?
@@ -33,7 +33,13 @@ public actor WhisperLocalDictation {
     }
 
     /// Transcribes 24 kHz mono Int16 PCM audio locally using WhisperKit + `promptTokens`.
+    /// Enforces `SpeechLanguagePolicy.allowedLanguages` (en + ko only); unsupported language hints
+    /// or non-allowed detected languages are gracefully ignored (returning "").
     public func transcribe(pcm24kMono: Data, languageHint: String? = nil, promptTerms: [String]) async throws -> String {
+        if SpeechLanguagePolicy.isUnsupportedExplicitHint(languageHint) {
+            return ""
+        }
+        let resolvedHint = SpeechLanguagePolicy.validatedHint(languageHint)
         let samples = Self.resample24kInt16To16kFloat(pcm24kMono)
         guard samples.count >= 1600 else { return "" } // < 0.1 s
         let (wk, tok) = try await ensureLoaded()
@@ -62,11 +68,10 @@ public actor WhisperLocalDictation {
             return try await wk.transcribe(audioArray: samples, decodeOptions: options)
         }
 
-        var results = try await run(language: languageHint)
+        let results = try await run(language: resolvedHint)
         let detected = results.first?.language ?? ""
-        // Mixed KO/EN short dictation can occasionally slip to Japanese/Chinese on auto-detect; retry in Korean.
-        if languageHint == nil && !detected.isEmpty && !Self.allowedLanguages.contains(detected) {
-            results = try await run(language: "ko")
+        if resolvedHint == nil && !detected.isEmpty && !SpeechLanguagePolicy.isAllowed(detected) {
+            return ""
         }
         let text = results
             .flatMap(\.segments)
@@ -75,6 +80,9 @@ public actor WhisperLocalDictation {
             .filter { !$0.isEmpty }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard SpeechLanguagePolicy.isAllowedTranscript(text, detectedLanguage: resolvedHint ?? detected) else {
+            return ""
+        }
         return text
     }
 

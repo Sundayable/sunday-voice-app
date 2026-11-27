@@ -30,4 +30,37 @@ final class WhisperLocalDictationTests: XCTestCase {
         )
         XCTAssertEqual(bounded, "Alpha, Beta")
     }
+
+    func testSpeechLanguagePolicyEnforcesEnAndKoOnly() {
+        XCTAssertEqual(SpeechLanguagePolicy.allowedLanguages.sorted(), ["en", "ko"])
+        XCTAssertTrue(SpeechLanguagePolicy.isAllowed("en"))
+        XCTAssertTrue(SpeechLanguagePolicy.isAllowed("ko"))
+        XCTAssertTrue(SpeechLanguagePolicy.isAllowed("en-US"))
+        XCTAssertTrue(SpeechLanguagePolicy.isAllowed("ko_KR"))
+        XCTAssertFalse(SpeechLanguagePolicy.isAllowed("ja"))
+        XCTAssertFalse(SpeechLanguagePolicy.isAllowed("es"))
+        XCTAssertFalse(SpeechLanguagePolicy.isAllowed("fr"))
+        XCTAssertTrue(SpeechLanguagePolicy.isUnsupportedExplicitHint("ja"))
+        XCTAssertFalse(SpeechLanguagePolicy.isUnsupportedExplicitHint("ko"))
+        XCTAssertFalse(SpeechLanguagePolicy.isUnsupportedExplicitHint(nil))
+        XCTAssertEqual(SpeechLanguagePolicy.filterLanguages(["ja", "ko-KR", "en-US", "fr"]), ["en", "ko"])
+    }
+
+    func testSpeechLanguagePolicyFiltersDisallowedTranscriptsAndExpandsWithSingleList() {
+        XCTAssertTrue(SpeechLanguagePolicy.isAllowedTranscript("이번 Ads report 확인해줘.", detectedLanguage: "ko"))
+        XCTAssertTrue(SpeechLanguagePolicy.isAllowedTranscript("Ship Sunday Voice Pro.", detectedLanguage: "en"))
+        XCTAssertFalse(SpeechLanguagePolicy.isAllowedTranscript("Bonjour tout le monde", detectedLanguage: "fr"))
+        XCTAssertFalse(SpeechLanguagePolicy.isAllowedTranscript("おはようございます"))
+        XCTAssertFalse(SpeechLanguagePolicy.isAllowedTranscript("Привет мир"))
+        XCTAssertTrue(SpeechLanguagePolicy.isAllowedTranscript("おはようございます", detectedLanguage: "ja", allowed: ["ko", "en", "ja"]))
+    }
+
+    func testWhisperLocalDictationGracefullyIgnoresUnsupportedLanguageHint() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sv-lang-test-\(UUID().uuidString)")
+        let local = WhisperLocalDictation(directory: dir)
+        let pcm = Data(repeating: 0, count: 4800)
+        // Unsupported language hint returns empty gracefully without requiring model files.
+        let result = try await local.transcribe(pcm24kMono: pcm, languageHint: "ja", promptTerms: [])
+        XCTAssertEqual(result, "")
+    }
 }

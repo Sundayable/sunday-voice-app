@@ -79,6 +79,8 @@ struct VocabularyView: View {
     /// Inside Settings the pane supplies insets and size; standalone it is its own window.
     var embedded = false
     var isGuest = false
+    var isSignedOut = false
+    var onOpenAccount: (() -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -92,6 +94,21 @@ struct VocabularyView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
             StepHeader(L("vocab.title"), L("vocab.body"))
+            if isSignedOut {
+                Card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(verbatim: L("settings.proFeature.wordsTitle")).font(Theme.display(16))
+                        Text(verbatim: L("settings.proFeature.wordsBody"))
+                            .font(Theme.text(13)).foregroundStyle(Theme.muted(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let onOpenAccount {
+                            Button(L("settings.proFeature.openAccount"), action: onOpenAccount).buttonStyle(GhostButton())
+                        }
+                    }
+                }
+                .frame(maxWidth: 520)
+                Spacer(minLength: 0)
+            } else {
             if let s = model.list?.stats {
                 Text(verbatim: L("vocab.stats", "\(s.total)", "\(s.hints)", "\(s.replacements)").uppercased())
                     .font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme))
@@ -159,10 +176,11 @@ struct VocabularyView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.rule(scheme)))
             if let error = model.error { Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red) }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(Theme.text(scheme))
-        .onAppear { if !model.preview { model.load() } }
+        .onAppear { if !model.preview && !isSignedOut { model.load() } }
         .sheet(isPresented: Binding(get: { model.importStage != .idle }, set: { if !$0 { model.importStage = .idle } })) {
             ImportSheet(model: model)
         }

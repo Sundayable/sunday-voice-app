@@ -41,6 +41,7 @@ extension MicEngine: EngineMicrophone {}
 /// and without API keys on the device.
 @MainActor
 public final class DictationEngine: DictationEngineProtocol {
+    public nonisolated static var allowedSpeechLanguages: [String] { SpeechLanguagePolicy.allowedLanguages }
     public private(set) var state: EngineState = .idle { didSet { if state != oldValue { onStateChange?(state) } } }
     public var onStateChange: ((EngineState) -> Void)?
     public var onLevel: LevelHandler?
@@ -161,6 +162,8 @@ public final class DictationEngine: DictationEngineProtocol {
     public func start(configuration: EngineConfiguration, tokens: AccessTokenProvider) throws {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw EngineError.microphoneDenied }
         guard AXIsProcessTrusted() else { throw EngineError.accessibilityMissing }
+        let wasRunning = lifecycle.isRunning
+        let previousLocal = self.configuration?.localDictationEnabled
         self.configuration = configuration
         recent.enabled = configuration.useRecentContext
         paster.keepTranscriptOnClipboard = configuration.keepTranscriptOnClipboard
@@ -208,7 +211,9 @@ public final class DictationEngine: DictationEngineProtocol {
             let local = localTranscriber
             Task { await local?.prewarm() }
         } else {
-            state = .connecting
+            if !(wasRunning && previousLocal == false && state == .idle) {
+                state = .connecting
+            }
             Task { [weak self] in
                 guard let self, self.lifecycle.accepts(generation) else { return }
                 await self.server?.warm()
@@ -1022,7 +1027,11 @@ public final class DictationEngine: DictationEngineProtocol {
             levelTimer?.invalidate(); maxRecordingTimer?.invalidate(); recordingWarningTimer?.invalidate()
             onRecordingNotice?(.recoveryAvailable)
             Log.engine.error("dictation_error code=\(code, privacy: .public)")
-            fail(.server("audio_saved"))
+            if code == "subscription_required" || code == "STT_subscription_required" {
+                fail(.server("subscription_required"))
+            } else {
+                fail(.server("audio_saved"))
+            }
         }
     }
 
