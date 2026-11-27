@@ -252,7 +252,8 @@ final class TurnPipeline {
     func maintain(maxAge: Double = 600, maxTurns: Int = 20) async {
         guard !isShutdown, turn == nil else { return }
         if !socket.isReady || uptime() - socket.connectedAt > min(maxAge, socket.maximumIdleAge) || turnCount >= min(maxTurns, socket.maximumTurns) || sessionStale {
-            socket.close(); turnCount = 0; sessionStale = false
+            if socket.isReady { socket.close() }
+            turnCount = 0; sessionStale = false
             try? await socket.connect()
         }
     }
@@ -286,10 +287,15 @@ final class TurnPipeline {
             if t.speculator == nil { t.speculator = Task { await self.speculate(t) } }
         case .completed(let item, let transcript):
             if !t.order.contains(item) { t.order.append(item) }
-            // An empty final must not erase already received partial words.
-            let final = checks.canonicalTranscript(transcript.trimmingCharacters(in: .whitespacesAndNewlines))
-            if !final.isEmpty { t.texts[item] = final }
-            else { t.audioIncomplete = true }
+            // An empty final must not erase already received partial words, unless disallowed script was returned.
+            let rawFinal = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !rawFinal.isEmpty && !SpeechLanguagePolicy.isAllowedTranscript(rawFinal) {
+                t.texts[item] = ""
+            } else {
+                let final = checks.canonicalTranscript(rawFinal)
+                if !final.isEmpty { t.texts[item] = final }
+                else { t.audioIncomplete = true }
+            }
             t.completed.insert(item); t.finalAt = uptime()
             updateFinal(t)
             // A natural pause can finalize the first piece before 15 seconds. Rewrite that

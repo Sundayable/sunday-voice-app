@@ -18,7 +18,7 @@ enum HUDState: Equatable {
     case tidyRestored
 }
 
-enum HUDAction: Equatable { case close, reconnect, microphoneSettings, accessibilitySettings, retryTranscription }
+enum HUDAction: Equatable { case close, reconnect, microphoneSettings, accessibilitySettings, retryTranscription, openAccount }
 
 /// Branded recording pill. Near-solid brand surface (not system material) so it stays legible
 /// over any app: light = Card + 2px Ink border + hard offset; dark = Night + Paper type.
@@ -243,8 +243,17 @@ struct HUDView: View {
             Image(systemName: "exclamationmark.circle").font(.system(size: 12.5, weight: .medium)).foregroundStyle(quiet)
             Text(verbatim: message).font(Theme.text(13, medium: true)).lineLimit(1)
             if action != .close {
-                pillButton(L(action == .retryTranscription ? "hud.button.retryTranscription" : action == .reconnect ? "hud.button.reconnect" : "hud.button.openSettings"), primary: false) { onAction(action) }
+                pillButton(L(actionTitleKey(action)), primary: action == .openAccount) { onAction(action) }
             }
+        }
+    }
+
+    private func actionTitleKey(_ action: HUDAction) -> String {
+        switch action {
+        case .retryTranscription: return "hud.button.retryTranscription"
+        case .reconnect: return "hud.button.reconnect"
+        case .openAccount: return "hud.button.upgradePro"
+        default: return "hud.button.openSettings"
         }
     }
 

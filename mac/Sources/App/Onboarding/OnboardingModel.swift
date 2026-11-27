@@ -75,6 +75,10 @@ final class OnboardingModel: ObservableObject {
         tryText = tryText.isEmpty ? trimmed : tryText + (tryText.hasSuffix(" ") || tryText.hasSuffix("\n") ? "" : " ") + trimmed
     }
     @Published var signInError: String?
+    @Published var billing: BillingSummary?
+    @Published var loadingBilling = false
+    @Published var billingActionPending = false
+    @Published var billingError: String?
     @Published var retryVisible: Set<Permission> = []
 
     let auth: AuthService
@@ -146,6 +150,7 @@ final class OnboardingModel: ObservableObject {
         connections = ["gmail": "not_connected", "slack": "not_connected"]
         disconnecting = []
         connectionError = nil; voiceError = nil; signInError = nil
+        billing = nil; billingError = nil; loadingBilling = false; billingActionPending = false
         tryText = ""; micHeard = false; buildingVoice = false
         Prefs.onboardingCompleted = false
         begin()
@@ -154,6 +159,7 @@ final class OnboardingModel: ObservableObject {
     func didSignIn() {
         guard auth.isSignedIn else { return }
         onAuthChanged?()
+        Task { await loadBilling() }
         if step == .signIn { next() }
         if permissions.allGranted { startEngine?() }
     }
@@ -453,6 +459,66 @@ final class OnboardingModel: ObservableObject {
     func connectedCallback(_ url: URL) {
         NSApp.activate(ignoringOtherApps: true)
         Task { await loadVoice() }
+    }
+
+    // MARK: billing
+
+    func loadBilling() async {
+        guard auth.user != nil, !isPreview else { return }
+        loadingBilling = true
+        defer { loadingBilling = false }
+        do {
+            let summary = try await api.me()
+            billing = summary.billing
+            billingError = nil
+        } catch {
+            // Keep prior billing state if a background refresh fails transiently.
+        }
+    }
+
+    func upgradeToPro() {
+        guard auth.user != nil, !billingActionPending else { return }
+        billingActionPending = true
+        billingError = nil
+        Task {
+            defer { billingActionPending = false }
+            do {
+                let url = try await api.startProCheckout()
+                NSWorkspace.shared.open(url)
+            } catch APIError.http(_, let code) where code == "billing_not_configured" {
+                billingError = L("billing.error.notConfigured")
+            } catch {
+                billingError = L("billing.error.checkout")
+            }
+        }
+    }
+
+    func manageSubscription() {
+        guard auth.user != nil, !billingActionPending else { return }
+        billingActionPending = true
+        billingError = nil
+        Task {
+            defer { billingActionPending = false }
+            do {
+                let url = try await api.openBillingPortal()
+                NSWorkspace.shared.open(url)
+            } catch APIError.http(_, let code) where code == "no_billing_account" {
+                billingError = L("billing.error.noAccount")
+            } catch APIError.http(_, let code) where code == "billing_not_configured" {
+                billingError = L("billing.error.notConfigured")
+            } catch {
+                billingError = L("billing.error.portal")
+            }
+        }
+    }
+
+    /// `<scheme>://billing?status=…` from Stripe Checkout / Customer Portal return page.
+    func billingCallback(_ url: URL) {
+        NSApp.activate(ignoringOtherApps: true)
+        Task {
+            await loadBilling()
+            onAuthChanged?()
+        }
     }
 
     var anyConnected: Bool { connections.values.contains("active") }

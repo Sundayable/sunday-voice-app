@@ -113,7 +113,7 @@ struct SettingsView: View {
         .frame(minWidth: 720, idealWidth: 820, minHeight: 520, idealHeight: 600)
         .background(Theme.ground(scheme))
         .foregroundStyle(Theme.text(scheme))
-        .onAppear { Task { await model.loadVoice() } }
+        .onAppear { Task { await model.loadVoice(); await model.loadBilling() } }
     }
 }
 
@@ -137,6 +137,8 @@ private struct AccountPane: View {
                     }
                 }
                 .frame(maxWidth: 520)
+                SubscriptionCard(model: model)
+                    .frame(maxWidth: 520)
                 Text(verbatim: L("settings.connections").uppercased()).font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme)).padding(.top, 6)
                 if model.isGuest {
                     Text(verbatim: L("settings.guestNoConnections")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme)).frame(maxWidth: 520, alignment: .leading)
@@ -203,6 +205,110 @@ private struct AccountPane: View {
                     }
                 }
                 .frame(maxWidth: 520)
+            }
+        }
+    }
+}
+
+private struct SubscriptionCard: View {
+    @ObservedObject var model: OnboardingModel
+    @Environment(\.colorScheme) private var scheme
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoFallback = ISO8601DateFormatter()
+
+    private func formattedDate(_ iso: String?) -> String? {
+        guard let iso else { return nil }
+        guard let date = Self.isoFormatter.date(from: iso) ?? Self.isoFallback.date(from: iso) else { return nil }
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .none
+        df.locale = Locale(identifier: UILanguage.isKorean ? "ko_KR" : "en_US")
+        return df.string(from: date)
+    }
+
+    var body: some View {
+        let billing = model.billing
+        let status = billing?.status ?? "none"
+        let isPro = status == "active" || status == "trialing"
+        let isTeam = billing?.plan == "team"
+        let isPastDue = status == "past_due" || status == "unpaid"
+        let price = billing?.price_usd_monthly ?? 19
+
+        Card(highlighted: isPro) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(verbatim: L("billing.sectionTitle")).font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme))
+                    Spacer()
+                    if isPro {
+                        Chip(text: L("billing.badge.pro"), ok: true)
+                    } else if isTeam {
+                        Chip(text: L("billing.badge.team"), ok: true)
+                    } else if isPastDue {
+                        Chip(text: L("billing.badge.pastDue"), ok: false)
+                    } else {
+                        Chip(text: L("billing.badge.free"), ok: false)
+                    }
+                }
+
+                if isPro {
+                    Text(verbatim: L("billing.pro.activeTitle", "\(price)")).font(Theme.display(16))
+                    if let periodText = formattedDate(billing?.current_period_end) {
+                        Text(verbatim: billing?.cancel_at_period_end == true
+                             ? L("billing.pro.cancelsOn", periodText)
+                             : L("billing.pro.renewsOn", periodText))
+                            .font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                    } else {
+                        Text(verbatim: L("billing.pro.activeBody")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                    }
+                    HStack(spacing: 10) {
+                        if billing?.has_customer == true {
+                            Button(L("billing.manage")) { model.manageSubscription() }
+                                .buttonStyle(GhostButton())
+                                .disabled(model.billingActionPending)
+                        }
+                        Button(L("billing.refresh")) { Task { await model.loadBilling() } }
+                            .buttonStyle(.link).font(Theme.text(12))
+                            .disabled(model.loadingBilling)
+                    }
+                } else if isTeam {
+                    Text(verbatim: L("billing.team.title")).font(Theme.display(16))
+                    Text(verbatim: L("billing.team.body")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(verbatim: isPastDue ? L("billing.pastDue.title") : L("billing.upgrade.title", "\(price)"))
+                        .font(Theme.display(16))
+                    Text(verbatim: isPastDue ? L("billing.pastDue.body") : L("billing.upgrade.body"))
+                        .font(Theme.text(12.5)).foregroundStyle(isPastDue ? .red : Theme.muted(scheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 10) {
+                        if isPastDue && billing?.has_customer == true {
+                            Button(L("billing.updatePayment")) { model.manageSubscription() }
+                                .buttonStyle(PrimaryButton())
+                                .disabled(model.billingActionPending)
+                        } else {
+                            Button(L("billing.upgradeButton", "\(price)")) { model.upgradeToPro() }
+                                .buttonStyle(PrimaryButton())
+                                .disabled(model.billingActionPending)
+                        }
+                        if billing?.has_customer == true && !isPastDue {
+                            Button(L("billing.manage")) { model.manageSubscription() }
+                                .buttonStyle(GhostButton())
+                                .disabled(model.billingActionPending)
+                        }
+                        Button(L("billing.refresh")) { Task { await model.loadBilling() } }
+                            .buttonStyle(.link).font(Theme.text(12))
+                            .disabled(model.loadingBilling)
+                    }
+                }
+
+                if let error = model.billingError {
+                    Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red)
+                }
             }
         }
     }

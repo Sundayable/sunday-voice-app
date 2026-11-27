@@ -9,9 +9,10 @@ actor WhisperMeetingTranscriber: MeetingTranscribing {
     static let modelName = "openai_whisper-large-v3-v20240930_626MB"
     static let tokenizerRepository = "openai/whisper-large-v3-turbo"
     static let speakerRepository = "argmaxinc/speakerkit-coreml"
-    /// Sunday Voice records Korean and English meetings. A window detected as any other language
-    /// is a detection slip on mixed speech and is decoded again in the meeting's main language.
-    static let meetingLanguages = ["ko", "en"]
+    /// Sunday Voice accepts only languages in `SpeechLanguagePolicy.allowedLanguages` (currently ko + en).
+    /// A window detected as any other language is ignored unless the track has dominant allowed speech,
+    /// in which case it is re-decoded in that allowed language and still script-checked.
+    static var meetingLanguages: [String] { SpeechLanguagePolicy.allowedLanguages }
     nonisolated let directory: URL
     private var engine: StrictLocalWhisperKit?
     private var speakers: SpeakerKit?
@@ -281,18 +282,24 @@ actor WhisperMeetingTranscriber: MeetingTranscribing {
             }
         }
 
-        // 4. Re-decode any stray third-language detections per track using that track's dominant KO/EN language.
+        // 4. Handle stray third-language detections per track:
+        //    - If the track already has dominant allowed-language speech (KO/EN), re-decode stray windows in that main language.
+        //    - If the track has NO allowed-language speech at all, ignore stray windows gracefully instead of hallucinating Korean.
         var redecodedCount = 0
         var strayJobs: [(id: Int, trackIndex: Int, region: MeetingSpeechRegions.Region, language: String)] = []
         for trackIndex in tracks.indices {
             let trackItems = decodedByID.compactMap { $0 }.filter { $0.trackIndex == trackIndex }
             var counts: [String: Int] = [:]
-            for item in trackItems where Self.meetingLanguages.contains(item.language) && !item.lines.isEmpty {
-                counts[item.language, default: 0] += 1
+            for item in trackItems where SpeechLanguagePolicy.isAllowed(item.language) && !item.lines.isEmpty {
+                counts[SpeechLanguagePolicy.normalize(item.language), default: 0] += 1
             }
-            let main = counts.max { $0.value == $1.value ? $0.key < $1.key : $0.value < $1.value }?.key ?? Self.meetingLanguages[0]
-            for item in trackItems where !Self.meetingLanguages.contains(item.language) {
-                strayJobs.append((item.id, trackIndex, item.region, main))
+            let main = counts.max { $0.value == $1.value ? $0.key < $1.key : $0.value < $1.value }?.key
+            for item in trackItems where !SpeechLanguagePolicy.isAllowed(item.language) {
+                if let main {
+                    strayJobs.append((item.id, trackIndex, item.region, main))
+                } else {
+                    decodedByID[item.id] = DecodedRegion(id: item.id, trackIndex: item.trackIndex, region: item.region, language: "", lines: [])
+                }
             }
         }
         if !strayJobs.isEmpty {
@@ -330,9 +337,9 @@ actor WhisperMeetingTranscriber: MeetingTranscribing {
 
         var output: [MeetingAudioSource: MeetingRecognition] = [:]
         for (trackIndex, track) in tracks.enumerated() {
-            let items = decodedByID.compactMap { $0 }.filter { $0.trackIndex == trackIndex }
+            let items = decodedByID.compactMap { $0 }.filter { $0.trackIndex == trackIndex && SpeechLanguagePolicy.isAllowed($0.language) }
             let lines = items.flatMap(\.lines).sorted { $0.startSeconds < $1.startSeconds }
-            let languages = Set(items.filter { !$0.lines.isEmpty }.map(\.language)).sorted()
+            let languages = SpeechLanguagePolicy.filterLanguages(items.filter { !$0.lines.isEmpty }.map(\.language))
             output[track.source] = MeetingRecognition(lines: lines, turns: turnsByTrack[trackIndex], languages: languages)
         }
         return output
@@ -359,12 +366,14 @@ actor WhisperMeetingTranscriber: MeetingTranscribing {
         let length = region.endSeconds - region.startSeconds
         let lines = found.flatMap(\.segments).compactMap { segment -> TimedText? in
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, segment.noSpeechProb < 0.65, segment.compressionRatio < 2.8, segment.avgLogprob > -1.3 else { return nil }
+            guard !text.isEmpty, segment.noSpeechProb < 0.65, segment.compressionRatio < 2.8, segment.avgLogprob > -1.3,
+                  SpeechLanguagePolicy.isAllowedTranscript(text) else { return nil }
             let start = min(length, max(0, Double(segment.start)))
             let end = min(length, max(start, Double(segment.end)))
             return TimedText(startSeconds: region.startSeconds + start, endSeconds: region.startSeconds + end, text: text, voice: region.speaker)
         }
-        return (found.first?.language ?? language ?? Self.meetingLanguages[0], lines)
+        let detected = SpeechLanguagePolicy.normalize(found.first?.language ?? language ?? "")
+        return (detected, lines)
     }
 }
 

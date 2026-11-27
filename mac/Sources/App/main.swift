@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var api = APIClient(auth: auth)
     lazy var diagnostics = Diagnostics(auth: auth, api: api)
     private var consentObserver: AnyCancellable?
+    private var consentPromptObserver: AnyCancellable?
     private var transcriptionObserver: AnyCancellable?
     private var languageObserver: NSObjectProtocol?
     private var consentTimer: Timer?
@@ -124,28 +125,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         auth.onDiagnosticError = { [weak self] code in self?.diagnostics.event(DiagnosticEvent("client_error", errorCode: code)) }
         engine.onDiagnostic = { [weak self] in self?.diagnostics.event($0) }
-        consentObserver = auth.$consentRequired.combineLatest(auth.$consentChecked).removeDuplicates { $0 == $1 }.sink { [weak self] required, checked in
+        consentObserver = auth.$consentRequired.removeDuplicates().dropFirst().sink { [weak self] required in
             Task { @MainActor in
                 guard let self else { return }
                 if required {
                     if self.auth.user != nil {
                         self.engine.stop()
                         self.diagnostics.reset()
-                        if checked { self.showOnboarding(at: .signIn) }
                     }
                 } else {
                     self.diagnostics.begin()
                     self.buildMenu()
                     if PermissionMonitor.read(previous: nil).allGranted { self.startEngine() }
                     self.render(self.engine.state)
-                    if self.onboardingWindow?.isVisible == true, self.onboarding?.step == .signIn,
-                       Prefs.onboardingCompleted, PermissionMonitor.read(previous: nil).allGranted {
-                        self.onboardingWindow?.close()
-                    }
+                }
+            }
+        }
+        consentPromptObserver = auth.$consentRequired.combineLatest(auth.$consentChecked).removeDuplicates { $0 == $1 }.sink { [weak self] required, checked in
+            Task { @MainActor in
+                guard let self else { return }
+                if required {
+                    if self.auth.user != nil && checked { self.showOnboarding(at: .signIn) }
+                } else if self.onboardingWindow?.isVisible == true, self.onboarding?.step == .signIn,
+                          Prefs.onboardingCompleted, PermissionMonitor.read(previous: nil).allGranted {
+                    self.onboardingWindow?.close()
                 }
             }
         }
         if auth.user != nil {
+            if auth.isSignedIn { diagnostics.begin() }
             Task {
                 do { try await auth.refreshConsent() }
                 catch {
@@ -170,6 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Task { await self.engine.retryTranscription(id: record.id) }
             case .microphoneSettings: NSWorkspace.shared.open(SettingsLink.url(.microphone))
             case .accessibilitySettings: NSWorkspace.shared.open(SettingsLink.url(.accessibility))
+            case .openAccount: self?.openAccountSettings()
             default: break
             }
         }
@@ -196,6 +205,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if url.host == "connected" {
                 onboarding?.connectedCallback(url)
                 settingsModel?.connectedCallback(url)
+            }
+            if url.host == "billing" {
+                onboarding?.billingCallback(url)
+                settingsModel?.billingCallback(url)
             }
             if url.host == "auth" { auth.handleCallback(url); NSApp.activate(ignoringOtherApps: true) }
             if url.host == "diagnostic", !meetingCaptureActive, !endingSession, UserDefaults.standard.bool(forKey: "diagnostics") {
@@ -317,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .server("audio_partial_saved"): return L("dictation.partialSaved")
         case .server("local_storage_unavailable"): return L("dictation.storageUnavailable")
         case .server("local_model_missing"): return L("dictation.localModelMissing")
+        case .server("subscription_required"), .server("STT_subscription_required"): return L("error.subscriptionRequired")
         case .server(let code) where code == "secure_field": return L("error.password")
         default: return L("error.couldNotFinish", "\(e)")
         }
@@ -324,6 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static func action(_ e: EngineError) -> HUDAction {
         switch e {
         case .server("audio_saved"), .server("audio_partial_saved"): return .retryTranscription
+        case .server("subscription_required"), .server("STT_subscription_required"): return .openAccount
         case .microphoneDenied: return .microphoneSettings
         case .accessibilityMissing, .inputMonitoringMissing: return .accessibilitySettings
         default: return .close
@@ -561,7 +576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         settingsModel?.triggers = Prefs.triggers
         settingsModel?.tidyKeys = Prefs.tidyShortcuts
-        if let model = settingsModel { Task { await model.loadVoice() } }
+        if let model = settingsModel { Task { await model.loadVoice(); await model.loadBilling() } }
         settingsWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
 

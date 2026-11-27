@@ -220,9 +220,10 @@ final class RealtimeSTTSocket: TranscriptionSocket {
     static let promptEventPrefix = "sv_prompt_"
 
     static func sessionUpdate(_ grant: STTSessionGrant, prompt: String, eventID: String? = nil) -> [String: Any] {
+        let languages = SpeechLanguagePolicy.filter(grant.session.languages)
         var update: [String: Any] = ["type": "session.update", "session": ["type": "transcription", "audio": ["input": [
             "format": ["type": "audio/pcm", "rate": 24000],
-            "transcription": ["model": grant.model, "languages": grant.session.languages, "delay": grant.session.delay,
+            "transcription": ["model": grant.model, "languages": languages, "delay": grant.session.delay,
                               "prompt": prompt, "keywords": grant.session.keywords],
             "turn_detection": NSNull()]]]]
         if let eventID { update["event_id"] = eventID }

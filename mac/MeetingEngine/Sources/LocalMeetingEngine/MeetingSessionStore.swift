@@ -196,7 +196,7 @@ actor MeetingPostProcessor {
             document.segments = MeetingTranscriptBuilder.segments(microphone: lines[.microphone] ?? [], system: lines[.system] ?? [])
             document.transcription = MeetingTranscriptionInfo(
                 speechModel: engine.speechModelName, speakerModel: voices > 0 ? engine.speakerModelName : nil,
-                languages: languages.sorted(), audioSeconds: audioSeconds, processingSeconds: Date().timeIntervalSince(began),
+                languages: SpeechLanguagePolicy.filterLanguages(Array(languages)), audioSeconds: audioSeconds, processingSeconds: Date().timeIntervalSince(began),
                 speakerCount: Set(document.segments.compactMap(\.speaker)).count)
             document.model = engine.speechModelName
             document.finishedAt = Date()
