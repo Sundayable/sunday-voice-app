@@ -1,0 +1,22 @@
+.DS_Store
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+mac/*.xcodeproj
+mac/Config/Identity.xcconfig
+node_modules/
+.next/
+.vercel/
+.env*
+!.env.example
+server/.composio/
+evidence/private/
+server/tsconfig.tsbuildinfo
+watch/*.xcodeproj/
+watch/Config/Identity.xcconfig
+watch/Config/*-Info.plist
+/server/node_modules
+/server/watch-server-check.*
+
+# SwiftPM local caches; lockfiles stay reviewable.
+**/.build/

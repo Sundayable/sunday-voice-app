@@ -1,0 +1,22 @@
+// Shared build settings. Identity.xcconfig is generated from identity.env.
+#include "Identity.xcconfig"
+#include "GoogleCalendar.xcconfig"
+
+MARKETING_VERSION = 0.3.18
+CURRENT_PROJECT_VERSION = 62
+MACOSX_DEPLOYMENT_TARGET = 14.0
+SWIFT_VERSION = 5.0
+PRODUCT_NAME = $(APP_DISPLAY_NAME)
+
+// API host (no scheme: "//" starts a comment in xcconfig). Production since 0.2.0.
+SV_API_HOST = voice.sundayable.com
+
+// Signing. Local builds: Apple Development (team from identity.env).
+// Distribution: switch CODE_SIGN_IDENTITY to "Developer ID Application" once that certificate
+// exists in the keychain, then notarize with scripts/notarize-mac.sh. Hardened runtime is always on.
+// Native Google Sign-In stores tokens in this app's Keychain access group.
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
+ENABLE_HARDENED_RUNTIME = YES
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
+OTHER_CODE_SIGN_FLAGS = --timestamp=none

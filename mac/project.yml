@@ -1,0 +1,77 @@
+name: SundayVoice
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+configs:
+  Debug: debug
+  Release: release
+packages:
+  Engine:
+    path: Engine
+  MeetingEngine:
+    path: MeetingEngine
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
+  AppAuth:
+    url: https://github.com/openid/AppAuth-iOS.git
+    exactVersion: 2.1.0
+  GTMAppAuth:
+    url: https://github.com/google/GTMAppAuth.git
+    exactVersion: 5.0.0
+targets:
+  SundayVoice:
+    type: application
+    platform: macOS
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    sources:
+      - path: Sources/App
+      - path: Resources
+    dependencies:
+      - package: Engine
+        product: DictationEngine
+      - package: MeetingEngine
+        product: LocalMeetingEngine
+      - package: Sparkle
+      - package: AppAuth
+        product: AppAuthCore
+      - package: GTMAppAuth
+    settings:
+      base:
+        INFOPLIST_FILE: Config/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/App.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        SWIFT_EMIT_LOC_STRINGS: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  SundayVoiceTests:
+    type: bundle.unit-test
+    platform: macOS
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    sources:
+      - path: Tests/AppTests
+    dependencies:
+      - target: SundayVoice
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_NAME: SundayVoiceTests
+        PRODUCT_BUNDLE_IDENTIFIER: $(PRODUCT_BUNDLE_IDENTIFIER).tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/$(APP_DISPLAY_NAME).app/Contents/MacOS/$(APP_DISPLAY_NAME)"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  SundayVoice:
+    build:
+      targets:
+        SundayVoice: all
+        SundayVoiceTests: [test]
+    test:
+      targets: [SundayVoiceTests]
+      commandLineArguments:
+        "--mock-engine": true

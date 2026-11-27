@@ -1,0 +1,4 @@
+#include "Base.xcconfig"
+// Unit tests inject XCTest into the app; hardened runtime's library validation blocks that.
+// Release (the only thing ever distributed) keeps hardened runtime on.
+ENABLE_HARDENED_RUNTIME = NO
