@@ -9,22 +9,24 @@ struct OnboardingView: View {
     var body: some View {
         let _ = lang.revision
         HStack(spacing: 0) {
-            Rail(step: model.step, facts: model.facts, hidesCloudSteps: model.hidesCloudSteps)
+            Rail(step: model.step, steps: model.visibleSteps)
                 .frame(width: 196)
                 .background(scheme == .dark ? Theme.ink.opacity(0.55) : Theme.surface.opacity(0.6))
             Rectangle().fill(Theme.rule(scheme)).frame(width: 1)
             VStack(spacing: 0) {
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical, showsIndicators: true) {
                     content.padding(.horizontal, 36).padding(.top, 34).padding(.bottom, 20)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Footer(model: model)
             }
         }
-        .frame(width: 760, height: 560)
+        .frame(width: 760, height: 600)
         .background(Theme.ground(scheme))
         .foregroundStyle(Theme.text(scheme))
         .environment(\.locale, Locale(identifier: UILanguage.isKorean ? "ko" : "en"))
+        // Step views get the same model on a language switch, so SwiftUI would skip them; a new identity redraws every string.
+        .id(lang.revision)
     }
 
     @ViewBuilder private var content: some View {
@@ -32,9 +34,11 @@ struct OnboardingView: View {
         case .signIn:
             if model.auth.user != nil && model.auth.consentRequired { ConsentView(model: model) }
             else { SignInStep(model: model) }
+        case .proUpgrade: ProUpgradeStep(model: model)
         case .permissions: PermissionsStep(model: model)
         case .mic: MicStep(model: model)
         case .keys: KeysStep(model: model)
+        case .localModel: LocalModelStep(model: model)
         case .connect: ConnectStep(model: model)
         case .voice: VoiceStep(model: model)
         case .tryIt: TryStep(model: model)
@@ -47,9 +51,7 @@ struct OnboardingView: View {
 
 private struct Rail: View {
     let step: OnboardingStep
-    let facts: OnboardingFlow.Facts
-    var hidesCloudSteps: Bool
-    private var visibleSteps: [OnboardingStep] { OnboardingStep.allCases.filter { !hidesCloudSteps || ($0 != .connect && $0 != .voice) } }
+    let steps: [OnboardingStep]
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -57,7 +59,7 @@ private struct Rail: View {
             Text(verbatim: AppIdentity.name).font(Theme.display(19)).padding(.bottom, 4).padding(.leading, 8)
             Text(verbatim: L("ob.rail.setup").uppercased()).font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme))
                 .padding(.bottom, 20).padding(.leading, 8)
-            ForEach(visibleSteps) { s in
+            ForEach(steps) { s in
                 HStack(spacing: 10) {
                     ZStack {
                         Circle().fill(s.rawValue < step.rawValue ? Theme.approval : (s == step ? Theme.structure(scheme) : Color.clear))
@@ -65,7 +67,7 @@ private struct Rail: View {
                         if s.rawValue < step.rawValue {
                             Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.paper)
                         } else {
-                            Text(verbatim: "\((visibleSteps.firstIndex(of: s) ?? 0) + 1)").font(Theme.label(10))
+                            Text(verbatim: "\((steps.firstIndex(of: s) ?? 0) + 1)").font(Theme.label(10))
                                 .foregroundStyle(s == step ? Theme.onStructure(scheme) : Theme.muted(scheme))
                         }
                     }
@@ -115,7 +117,7 @@ private struct Footer: View {
             if model.step == .done {
                 Button(L("ob.done.finish", AppIdentity.name)) { model.finish() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
             } else if model.step == .signIn && model.auth.user == nil {
-                Button(L("ob.welcome.startLocal")) { model.next() }
+                Button(L("ob.welcome.startLocal")) { model.startFreeLocal() }
                     .buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
             } else if model.step != .signIn || model.facts.signedIn {
                 Button(L("ob.continue")) { model.next() }
@@ -132,6 +134,7 @@ extension OnboardingModel {
     /// For skippable steps: whether the step's own goal was reached (hides "Skip").
     var canContinueStrict: Bool {
         switch step {
+        case .localModel: return localModelReady
         case .connect: return anyConnected
         case .voice: return !savedCards.isEmpty
         case .tryIt: return !tryText.isEmpty
@@ -226,7 +229,12 @@ struct SignInStep: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Image(nsImage: AppIdentity.icon).resizable().frame(width: 52, height: 52).padding(.bottom, 14)
+            HStack(alignment: .top) {
+                Image(nsImage: AppIdentity.icon).resizable().frame(width: 52, height: 52)
+                Spacer()
+                LanguageSwitch()
+            }
+            .padding(.bottom, 14)
             StepHeader(L("ob.welcome.title"), L("ob.welcome.body"))
             if let user = model.auth.user {
                 Card(highlighted: true) {
@@ -251,10 +259,7 @@ struct SignInStep: View {
                     }
                     Card {
                         VStack(alignment: .leading, spacing: 10) {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(verbatim: L("ob.welcome.pro.title")).font(Theme.display(15))
-                                Text(verbatim: L("ob.welcome.pro.badge").uppercased()).font(Theme.label(10)).foregroundStyle(Theme.muted(scheme))
-                            }
+                            Text(verbatim: L("ob.welcome.pro.title")).font(Theme.display(15))
                             Text(verbatim: L("ob.welcome.pro.body"))
                                 .font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
                                 .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
@@ -317,6 +322,32 @@ struct GoogleMark: View {
     }
 }
 
+// MARK: 1b pro upgrade
+
+struct ProUpgradeStep: View {
+    @ObservedObject var model: OnboardingModel
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            StepHeader(L("ob.pro.title"), L("ob.pro.body"))
+            SubscriptionCard(model: model)
+                .frame(maxWidth: 492)
+            if model.isProEntitled {
+                Label { Text(verbatim: L("ob.pro.ready")).font(Theme.text(13, medium: true)) } icon: { Image(systemName: "checkmark.seal.fill") }
+                    .foregroundStyle(Theme.approval)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Button(L("ob.pro.useLocal")) { model.switchToFreeLocalMode() }
+                        .buttonStyle(GhostButton())
+                    Text(verbatim: L("billing.freeLocalReadyNote"))
+                        .font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
 // MARK: 2 permissions
 
 struct PermissionsStep: View {
@@ -330,6 +361,7 @@ struct PermissionsStep: View {
                     ForEach(model.permissions.required, id: \.self) { p in
                         PermissionCard(permission: p, granted: model.permissions.granted(p),
                                        focused: model.permissions.nextMissing == p,
+                                       requested: model.monitor.waitingSince[p] != nil,
                                        retry: model.retryVisible.contains(p), action: { model.request(p) },
                                        retryAction: { model.monitor.openSettings(p) })
                     }
@@ -350,6 +382,8 @@ struct PermissionCard: View {
     let permission: Permission
     let granted: Bool
     let focused: Bool
+    /// "Waiting for you…" only after the user asked macOS for this permission.
+    var requested = true
     let retry: Bool
     let action: () -> Void
     let retryAction: () -> Void
@@ -377,7 +411,7 @@ struct PermissionCard: View {
                     Button(buttonTitle, action: action).buttonStyle(PrimaryButton())
                     if retry {
                         Button(L("ob.perm.retry"), action: retryAction).buttonStyle(.link).font(Theme.text(12))
-                    } else if focused {
+                    } else if focused && requested {
                         Text(verbatim: L("ob.perm.waiting")).font(Theme.text(11.5)).foregroundStyle(Theme.muted(scheme))
                     }
                 }
@@ -483,117 +517,7 @@ struct LevelBars: View {
     }
 }
 
-// MARK: 4 keys
-
-struct KeysStep: View {
-    @ObservedObject var model: OnboardingModel
-    @Environment(\.colorScheme) private var scheme
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            StepHeader(L("ob.keys.title"), L("ob.keys.body"))
-            VStack(spacing: 12) {
-                TriggerSection(model: model, mode: .bilingual, title: L("ob.keys.original"), detail: L("ob.keys.original.detail"))
-                TriggerSection(model: model, mode: .english, title: L("ob.keys.english"), detail: L("ob.keys.english.detail"))
-                TidyKeySection(model: model)
-            }
-            .frame(maxWidth: 540)
-            HStack(spacing: 10) {
-                if let message = model.keyMessage {
-                    Label { Text(verbatim: message).font(Theme.text(12.5, medium: true)) } icon: { Image(systemName: "exclamationmark.circle") }
-                        .foregroundStyle(Theme.text(scheme))
-                } else if let captured = model.captured {
-                    Label { Text(verbatim: L("ob.keys.detected", captured)).font(Theme.text(12.5, medium: true)) } icon: { Image(systemName: "checkmark.circle.fill") }
-                        .foregroundStyle(Theme.approval)
-                }
-                Spacer()
-                Button(L("ob.keys.reset")) { model.resetTriggers() }.buttonStyle(.link).font(Theme.text(12))
-            }
-            .padding(.top, 12).frame(maxWidth: 540)
-            if model.triggers.contains(where: { if case .modifierHold(let k, _, _) = $0 { return k.contains(.fn) }; return false }) {
-                HStack(spacing: 6) {
-                    Text(verbatim: L("ob.keys.fnTip")).font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
-                    Button(L("ob.keys.fnTip.open")) { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!) }
-                        .buttonStyle(.link).font(Theme.text(12))
-                }
-                .padding(.top, 8)
-            }
-        }
-    }
-}
-
-struct TriggerSection: View {
-    @ObservedObject var model: OnboardingModel
-    let mode: DictationMode
-    let title: String
-    let detail: String
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(verbatim: title).font(Theme.display(16))
-                    Text(verbatim: detail).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
-                }
-                FlowRow(spacing: 8) {
-                    ForEach(model.triggers(for: mode), id: \.self) { t in
-                        HStack(spacing: 6) {
-                            Keycap(label: OnboardingModel.describe(t))
-                            if OnboardingModel.isHold(t) { Text(verbatim: L("ob.keys.hold")).font(Theme.text(11.5)).foregroundStyle(Theme.muted(scheme)) }
-                            Button { model.removeTrigger(t) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
-                                .buttonStyle(.borderless).foregroundStyle(Theme.muted(scheme))
-                                .accessibilityLabel("\(L("ob.keys.remove")) \(OnboardingModel.describe(t))")
-                                .help(L("ob.keys.remove"))
-                        }
-                    }
-                    Button { model.captureKey(for: mode) } label: {
-                        Text(verbatim: model.capturingMode == mode ? L("ob.keys.listening") : L("ob.keys.add"))
-                            .font(Theme.text(12.5, medium: true))
-                            .padding(.horizontal, 12).frame(height: 30)
-                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.rule(scheme), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
-                    }
-                    .buttonStyle(.plain).disabled(model.capturing)
-                }
-            }
-        }
-    }
-}
-
-/// Third card: "Tidy clipboard" keys. Same chips as the dictation cards; these are pressed, not held.
-struct TidyKeySection: View {
-    @ObservedObject var model: OnboardingModel
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(verbatim: L("ob.keys.tidy")).font(Theme.display(16))
-                    Text(verbatim: L("ob.keys.tidy.detail")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
-                }
-                FlowRow(spacing: 8) {
-                    ForEach(model.tidyKeys, id: \.self) { key in
-                        HStack(spacing: 6) {
-                            Keycap(label: OnboardingModel.describe(key.trigger))
-                            Text(verbatim: L("ob.keys.press")).font(Theme.text(11.5)).foregroundStyle(Theme.muted(scheme))
-                            Button { model.removeTidyKey(key) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
-                                .buttonStyle(.borderless).foregroundStyle(Theme.muted(scheme))
-                                .accessibilityLabel("\(L("ob.keys.remove")) \(OnboardingModel.describe(key.trigger))")
-                                .help(L("ob.keys.remove"))
-                        }
-                    }
-                    Button { model.captureTidyKey() } label: {
-                        Text(verbatim: model.capturingTidy ? L("ob.keys.listening") : L("ob.keys.addKey"))
-                            .font(Theme.text(12.5, medium: true))
-                            .padding(.horizontal, 12).frame(height: 30)
-                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.rule(scheme), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
-                    }
-                    .buttonStyle(.plain).disabled(model.capturing)
-                }
-            }
-        }
-    }
-}
+// MARK: 4 keys — see KeysView.swift
 
 /// Wraps chips onto the next line when they don't fit.
 struct FlowRow: Layout {
@@ -639,6 +563,63 @@ struct Keycap: View {
                 }
             )
             .padding(.bottom, 2) // keep the key's bottom edge inside the layout (was clipped)
+    }
+}
+
+// MARK: 4b local speech model
+
+struct LocalModelStep: View {
+    @ObservedObject var model: OnboardingModel
+    @Environment(\.colorScheme) private var scheme
+
+    private var progressLabel: String {
+        if model.localModelProgress >= 0.94 { return L("ob.localModel.preparing") }
+        let pct = "\(Int((min(1, max(0, model.localModelProgress)) * 100).rounded()))"
+        return L("ob.localModel.downloading", pct)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            StepHeader(L("ob.localModel.title"), L("ob.localModel.body"))
+            Card(highlighted: model.localModelReady) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: model.localModelReady ? "checkmark.circle.fill" : "arrow.down.circle")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(model.localModelReady ? Theme.approval : Theme.text(scheme))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: L(model.localModelReady ? "ob.localModel.readyTitle" : "ob.localModel.cardTitle"))
+                                .font(Theme.display(16))
+                            Text(verbatim: L(model.localModelReady ? "ob.localModel.readyBody" : "ob.localModel.cardBody"))
+                                .font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 4)
+                    }
+                    if model.localModelDownloading {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ProgressView(value: model.localModelProgress > 0 ? min(1, model.localModelProgress) : nil)
+                                .tint(Theme.approval)
+                            Text(verbatim: progressLabel)
+                                .font(Theme.text(12.5, medium: true))
+                                .foregroundStyle(Theme.muted(scheme))
+                                .monospacedDigit()
+                        }
+                    } else if !model.localModelReady {
+                        Button(L(model.localModelError == nil ? "ob.localModel.download" : "ob.localModel.retry")) {
+                            model.downloadLocalModel()
+                        }
+                        .buttonStyle(PrimaryButton())
+                    }
+                    if let error = model.localModelError {
+                        Text(verbatim: error)
+                            .font(Theme.text(12)).foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .frame(maxWidth: 492)
+        }
     }
 }
 
@@ -741,21 +722,56 @@ struct CardEditor: View {
     @ObservedObject var model: OnboardingModel
     let lang: String
     let title: String
+    @State private var confirmingDelete = false
     @Environment(\.colorScheme) private var scheme
+
+    private var hasContent: Bool {
+        let current = (model.cards[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let saved = (model.savedCards[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return !current.isEmpty || !saved.isEmpty
+    }
+
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
+                HStack(spacing: 10) {
                     Text(verbatim: title).font(Theme.display(15))
                     Spacer()
-                    if model.cards[lang] != model.savedCards[lang] {
+                    if model.cards[lang] != model.savedCards[lang],
+                       !(model.cards[lang] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Button(L("ob.voice.save")) { model.saveCard(lang) }.buttonStyle(.link).font(Theme.text(12, medium: true))
                     }
+                    if hasContent && !confirmingDelete {
+                        Button(L("voice.delete")) { confirmingDelete = true }
+                            .buttonStyle(.link).font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
+                    }
                 }
-                TextEditor(text: Binding(get: { model.cards[lang] ?? "" }, set: { model.cards[lang] = $0 }))
-                    .font(Theme.text(12.5)).scrollContentBackground(.hidden).scrollIndicators(.never)
-                    .frame(height: 210)
-                    .padding(6).background(Theme.ground(scheme), in: RoundedRectangle(cornerRadius: 8))
+                if confirmingDelete {
+                    HStack(spacing: 8) {
+                        Text(verbatim: L("voice.delete.confirm")).font(Theme.text(11.5)).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        Button(L("voice.delete.confirmButton")) {
+                            confirmingDelete = false
+                            model.deleteCard(lang)
+                        }.buttonStyle(GhostButton())
+                        Button(L("keys.cancel")) { confirmingDelete = false }.buttonStyle(.link).font(Theme.text(12))
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.well(scheme)))
+                }
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: Binding(get: { model.cards[lang] ?? "" }, set: { model.cards[lang] = $0 }))
+                        .font(Theme.text(12.5)).scrollContentBackground(.hidden).scrollIndicators(.never)
+                        .frame(height: 210)
+                        .padding(6).background(Theme.ground(scheme), in: RoundedRectangle(cornerRadius: 8))
+                    if (model.cards[lang] ?? "").isEmpty {
+                        Text(verbatim: L("voice.emptyCard"))
+                            .font(Theme.text(12))
+                            .foregroundStyle(Theme.muted(scheme).opacity(0.75))
+                            .padding(12)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
         }
     }
@@ -793,27 +809,67 @@ struct PresetColumn: View {
 struct TryStep: View {
     @ObservedObject var model: OnboardingModel
     @Environment(\.colorScheme) private var scheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            StepHeader(L("ob.try.title"), L("ob.try.body"))
+            StepHeader(L("ob.try.title"), L(model.effectiveLocalDictation ? "ob.try.body.local" : "ob.try.body"))
+            if model.effectiveLocalDictation && !model.localModelReady {
+                Card {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "arrow.down.circle").foregroundStyle(Theme.muted(scheme))
+                            Text(verbatim: L("ob.localModel.tryBanner")).font(Theme.text(12.5, medium: true))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            if !model.localModelDownloading {
+                                Button(L("ob.localModel.tryDownload")) { model.downloadLocalModel() }
+                                    .buttonStyle(GhostButton())
+                            }
+                        }
+                        if model.localModelDownloading {
+                            ProgressView(value: model.localModelProgress > 0 ? min(1, model.localModelProgress) : nil)
+                                .tint(Theme.approval)
+                        }
+                        if let error = model.localModelError {
+                            Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red)
+                        }
+                    }
+                }
+                .padding(.bottom, 12)
+            }
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $model.tryText).font(Theme.text(15)).scrollContentBackground(.hidden).scrollIndicators(.never).padding(10)
                 if model.tryText.isEmpty {
                     Text(verbatim: L("ob.try.placeholder")).font(Theme.text(15)).foregroundStyle(Theme.muted(scheme).opacity(0.7)).padding(15).allowsHitTesting(false)
                 }
             }
-            .frame(height: 150)
+            .frame(height: model.effectiveLocalDictation && !model.localModelReady ? 110 : 150)
             .background(Theme.panel(scheme), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.text(scheme), lineWidth: 1.5))
-            HStack(spacing: 8) {
-                ForEach(model.triggers.map(OnboardingModel.describe), id: \.self) { Keycap(label: $0) }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: L("ob.try.keysLabel").uppercased()).font(Theme.label(10)).foregroundStyle(Theme.muted(scheme))
+                HStack(spacing: 16) {
+                    ForEach([DictationMode.bilingual, .english], id: \.self) { mode in
+                        if let t = model.primaryTrigger(for: mode), mode == .bilingual || !model.effectiveLocalDictation {
+                            HStack(spacing: 7) {
+                                KeyChip(verb: L("keys.hold"), key: OnboardingModel.describe(t))
+                                Text(verbatim: "→ " + L(mode.nameKey)).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                            }
+                        }
+                    }
+                }
             }
             .padding(.top, 14)
             if !model.tryText.isEmpty {
                 Label { Text(verbatim: L("ob.try.success")).font(Theme.text(13.5, medium: true)) } icon: { Image(systemName: "sparkles") }
                     .foregroundStyle(Theme.approval).padding(.top, 12)
             } else {
-                Text(verbatim: L("ob.try.fallback")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme)).padding(.top, 12)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(verbatim: L("ob.try.fallback")).font(Theme.text(12.5)).foregroundStyle(Theme.muted(scheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(L("ob.try.openKeys")) { model.go(to: .keys) }.buttonStyle(.link).font(Theme.text(12.5, medium: true))
+                }
+                .padding(.top, 12)
             }
         }
     }
@@ -826,7 +882,11 @@ struct DoneStep: View {
     @Environment(\.colorScheme) private var scheme
     private var cheat: String {
         func names(_ m: DictationMode) -> String { model.triggers(for: m).map(OnboardingModel.describe).joined(separator: " / ") }
-        return "\(names(.bilingual)) → \(L("ob.keys.original"))   ·   \(names(.english)) → \(L("ob.keys.english"))"
+        let proLocked = model.proActionsLocked || model.effectiveLocalDictation
+        let englishSuffix = proLocked ? " (\(L("badge.proOnly")))" : ""
+        let polish = model.primaryTidyKey.map { "   ·   \(OnboardingModel.describe($0.trigger)) → \(L("mode.polish.name"))" } ?? ""
+        let polishSuffix = proLocked ? " (\(L("badge.proOnly")))" : ""
+        return "\(names(.bilingual)) → \(L("mode.dictate.name"))   ·   \(names(.english)) → \(L("mode.english.name"))\(englishSuffix)\(polish)\(polish.isEmpty ? "" : polishSuffix)"
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -844,7 +904,183 @@ struct DoneStep: View {
             .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1)))
             .frame(maxWidth: 520)
-            Text(verbatim: cheat).font(Theme.text(12.5, medium: true)).foregroundStyle(Theme.muted(scheme)).padding(.top, 26)
+            Text(verbatim: cheat).font(Theme.text(12.5, medium: true)).foregroundStyle(Theme.muted(scheme)).padding(.top, 20)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(verbatim: L("ob.done.optionalSection").uppercased())
+                    .font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme))
+                    .padding(.top, 20)
+                if HandsFreeSupport.isAvailable() {
+                    HandsFreeOnboardingCard {
+                        model.openHandsFreeSettings?()
+                    }
+                }
+                AnonymousStatsCard(compact: true, localMode: model.effectiveLocalDictation)
+                ProductUpdatesCard(source: .onboardingDone)
+            }
+            .frame(maxWidth: 520)
         }
+    }
+}
+
+/// Opt-in anonymous usage stats card (default OFF; asked once on onboarding Done + configurable in Settings → General).
+struct AnonymousStatsCard: View {
+    var compact = false
+    var localMode = true
+    @State private var enabled = Prefs.anonymousStatsEnabled
+    @State private var resetConfirmed = false
+    @Environment(\.colorScheme) private var scheme
+
+    private var baseURL: URL { AppIdentity.apiBaseURL ?? URL(string: "https://voice.sundayable.com")! }
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 10) {
+                    Text(verbatim: L("stats.toggleTitle"))
+                        .font(Theme.text(13.5, medium: true))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 10)
+                    Toggle("", isOn: $enabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .accessibilityLabel(L("stats.toggleTitle"))
+                        .onChange(of: enabled) { _, on in
+                            Prefs.anonymousStatsEnabled = on
+                            if on { AnonymousStats.shared.recordFirstLaunchIfNeeded(localMode: localMode) }
+                        }
+                }
+                Text(verbatim: L("stats.toggleBody"))
+                    .font(Theme.text(11.5)).foregroundStyle(Theme.muted(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: L("stats.neverSent"))
+                    .font(Theme.text(11.5, medium: true)).foregroundStyle(Theme.text(scheme).opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: L("stats.localHonestNote"))
+                    .font(Theme.text(11.5)).foregroundStyle(Theme.approval)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !compact {
+                    Rectangle().fill(Theme.rule(scheme)).frame(height: 1).padding(.vertical, 2)
+                    HStack(spacing: 14) {
+                        Button(L("stats.resetID")) {
+                            Prefs.resetAnonymousStatsInstallID()
+                            resetConfirmed = true
+                        }
+                        .buttonStyle(GhostButton())
+                        if resetConfirmed {
+                            Text(verbatim: L("stats.resetIDDone"))
+                                .font(Theme.text(11.5, medium: true))
+                                .foregroundStyle(Theme.approval)
+                        }
+                        Spacer(minLength: 0)
+                        Link(L("stats.privacyLink"), destination: baseURL.appendingPathComponent("privacy"))
+                            .font(Theme.text(11.5, medium: true))
+                        Link(L("stats.termsLink"), destination: baseURL.appendingPathComponent("terms"))
+                            .font(Theme.text(11.5, medium: true))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Optional CASL-compliant product updates signup card (unchecked by default; never auto-subscribed).
+struct ProductUpdatesCard: View {
+    let source: ProductUpdatesClient.Source
+    @State private var email = ""
+    @State private var consent = false
+    @State private var submitting = false
+    @State private var subscribed = Prefs.productUpdatesSubscribed
+    @State private var error: String?
+    @Environment(\.colorScheme) private var scheme
+
+    private var canSubmit: Bool {
+        consent && ProductUpdatesClient.isValidEmail(email) && !submitting
+    }
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 9) {
+                Text(verbatim: L("updates.title")).font(Theme.display(15))
+                Text(verbatim: L("updates.body"))
+                    .font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+                if subscribed {
+                    Label {
+                        Text(verbatim: L("updates.subscribed"))
+                            .font(Theme.text(12, medium: true))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                    }
+                    .foregroundStyle(Theme.approval)
+                } else {
+                    HStack(spacing: 8) {
+                        TextField(L("updates.emailPlaceholder"), text: $email)
+                            .textFieldStyle(.roundedBorder)
+                            .font(Theme.text(13))
+                        Button(submitting ? L("updates.submitting") : L("updates.submit")) {
+                            submitting = true; error = nil
+                            Task {
+                                do {
+                                    try await ProductUpdatesClient.shared.subscribe(email: email, consent: consent, source: source)
+                                    Prefs.productUpdatesSubscribed = true
+                                    subscribed = true
+                                } catch {
+                                    self.error = L("updates.error")
+                                }
+                                submitting = false
+                            }
+                        }
+                        .buttonStyle(GhostButton())
+                        .disabled(!canSubmit)
+                    }
+                    Toggle(isOn: $consent) {
+                        Text(verbatim: L("updates.consentCheckbox"))
+                            .font(Theme.text(11.5)).foregroundStyle(Theme.muted(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .toggleStyle(.checkbox)
+                    if let error {
+                        Text(verbatim: error).font(Theme.text(11.5)).foregroundStyle(.red)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// First-screen language switch (한국어 / English). Starts on the Mac's language; changes the whole app at once.
+/// Language names are shown in their own language, so they never need translating.
+struct LanguageSwitch: View {
+    @ObservedObject private var lang = UILanguageObserver.shared
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        let _ = lang.revision
+        let korean = UILanguage.isKorean
+        HStack(spacing: 8) {
+            Image(systemName: "globe").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.muted(scheme))
+                .accessibilityLabel(L("lang.label"))
+            HStack(spacing: 0) {
+                option("한국어", code: "ko", selected: korean)
+                option("English", code: "en", selected: !korean)
+            }
+            .padding(2)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.well(scheme)))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Theme.rule(scheme), lineWidth: 1))
+        }
+    }
+
+    private func option(_ name: String, code: String, selected: Bool) -> some View {
+        Button { if !selected { UILanguage.choice = code } } label: {
+            Text(verbatim: name).font(Theme.text(12.5, medium: true))
+                .padding(.horizontal, 11).frame(height: 26)
+                .foregroundStyle(selected ? Theme.onStructure(scheme) : Theme.text(scheme))
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(selected ? Theme.structure(scheme) : Color.clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

@@ -228,6 +228,9 @@ final class ServerClient: Rewriter, @unchecked Sendable {
             if let expectMode, (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Rewrite-Mode") != expectMode {
                 bytes.task.cancel(); throw FailureCode.serverOutdated
             }
+            // HTTP 200 SSE headers confirm upstream accepted the request and is streaming; grant
+            // bounded progress grace so cold-start primary rewrites finish instead of falling back.
+            DiagnosticContext.rewriteProgress?.receivedToken()
             return try await withTaskCancellationHandler {
                 defer { bytes.task.cancel() }
                 var out = ""

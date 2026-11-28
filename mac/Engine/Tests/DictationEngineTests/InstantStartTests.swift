@@ -129,6 +129,9 @@ final class InstantStartTests: XCTestCase {
 
         mic.emit(Data(repeating: 9, count: 9600))
         socket.failConnect(FailureCode("network_offline"))
+        await socket.waitForConnectStart() // one transparent retry on a fresh session
+        XCTAssertEqual(socket.connects, 2)
+        socket.failConnect(FailureCode("network_offline"))
         await waitFor(notices.contains(.recordingLocally))
         XCTAssertEqual(engine.state, .listening(.bilingual), "Recording continues locally without interrupting speech")
 

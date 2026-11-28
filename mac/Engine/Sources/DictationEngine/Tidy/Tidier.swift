@@ -10,6 +10,7 @@ public enum TidyError: Error, Equatable, Sendable {
     case tooLong(limit: Int)
     case notSignedIn
     case quotaExceeded
+    case subscriptionRequired
     /// The API predates tidy (it would clean the text as a dictation instead).
     case serverOutdated
     /// Both tiers returned text that dropped a link, number or mention, failed the English output checks.
@@ -158,6 +159,7 @@ public final class Tidier: @unchecked Sendable {
                 switch code {
                 case .notSignedIn: throw TidyError.notSignedIn
                 case .quotaExceeded: throw TidyError.quotaExceeded
+                case .subscriptionRequired: throw TidyError.subscriptionRequired
                 case .serverOutdated: throw TidyError.serverOutdated
                 default: lastError = code
                 }

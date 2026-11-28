@@ -1,6 +1,23 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Start Dictation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Dictation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기 시작"
+          }
+        }
+      }
+    },
     "app.name": {
       "extractionState": "manual",
       "localizations": {
@@ -14,6 +31,71 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@"
+          }
+        }
+      }
+    },
+    "badge.freeAndPro": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Local & Pro"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료·로컬에서도 작동"
+          }
+        }
+      }
+    },
+    "badge.proCloudOnly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro (Cloud) only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro (클라우드) 전용"
+          }
+        }
+      }
+    },
+    "badge.proComingSoon": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro · Coming soon"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro · 곧 출시"
+          }
+        }
+      }
+    },
+    "badge.proOnly": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 전용"
           }
         }
       }
@@ -150,6 +232,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "구독 관리 페이지를 열지 못했어요. 잠시 후 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "billing.freeLocalReadyNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can keep dictating in Free Local Mode right now without paying."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결제하지 않아도 지금 바로 무료 로컬 모드로 계속 받아쓸 수 있어요."
           }
         }
       }
@@ -409,6 +508,40 @@
         }
       }
     },
+    "consent.noTrain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We do not use your data to train AI models."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자의 데이터는 AI 모델 학습에 사용하지 않아요."
+          }
+        }
+      }
+    },
+    "consent.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your voice stays yours"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 데이터는 안전하게 보호돼요"
+          }
+        }
+      }
+    },
     "dictation.audioSaved": {
       "extractionState": "manual",
       "localizations": {
@@ -466,13 +599,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This permanently deletes unfinished dictation audio and its partial text from this Mac. Recent transcripts and meeting files are kept."
+            "value": "This permanently deletes unfinished dictation audio and partial text from this Mac now. Recent transcripts and meeting files are kept. Unfinished items are also deleted automatically after 7 days."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 Mac에 저장된 미완료 받아쓰기 음성과 부분 텍스트를 삭제합니다. 삭제한 음성은 복구할 수 없습니다. 최근 받아쓰기와 회의 파일은 유지됩니다."
+            "value": "완료되지 않은 받아쓰기 음성과 일부 텍스트를 이 Mac에서 지금 완전히 지워요. 최근 받아쓰기와 회의 파일은 그대로 남아요. 완료되지 않은 항목은 7일이 지나면 자동으로 지워져요."
           }
         }
       }
@@ -528,19 +661,53 @@
         }
       }
     },
+    "dictation.interruptedSaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording interrupted. Audio saved."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "녹음이 중단됐지만 음성은 저장됐어요."
+          }
+        }
+      }
+    },
+    "dictation.localEmptySaved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't transcribe that. Audio saved."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잘 받아쓰지 못했지만 음성은 저장됐어요."
+          }
+        }
+      }
+    },
     "dictation.localModelMissing": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download the local speech model in Settings → Meetings first"
+            "value": "Local speech model isn’t downloaded yet."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "설정 → 미팅에서 로컬 음성 모델을 먼저 준비해 주세요"
+            "value": "로컬 음성 모델이 아직 다운로드되지 않았어요."
           }
         }
       }
@@ -568,13 +735,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recording on this Mac · transcription needs a retry"
+            "value": "Recording on this Mac. It will transcribe automatically."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mac에 녹음 중 · 나중에 다시 받아쓰기"
+            "value": "이 Mac에 안전하게 녹음 중이에요. 끝나면 자동으로 받아써요."
+          }
+        }
+      }
+    },
+    "dictation.recoveredHeld": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovered text is ready on your clipboard."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기를 복구해 클립보드에 복사했어요."
           }
         }
       }
@@ -1055,6 +1239,669 @@
         }
       }
     },
+    "handsfree.copyURL": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy URL action"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL 동작 복사"
+          }
+        }
+      }
+    },
+    "handsfree.onboarding.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional: pair macOS Vocal Shortcuts (\"Hey Sunday\" / \"헤이 선데이\") with Send by voice on Apple Silicon Macs."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택 사항: Apple Silicon Mac에서 macOS 음성 단축어(\"Hey Sunday\" / \"헤이 선데이\")를 연결해 손대지 않고 받아쓰기를 시작해 보세요."
+          }
+        }
+      }
+    },
+    "handsfree.onboarding.button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set up"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정하기"
+          }
+        }
+      }
+    },
+    "handsfree.onboarding.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hands-free start with your voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성으로 바로 시작·전송"
+          }
+        }
+      }
+    },
+    "handsfree.openSendByVoice": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure send phrases →"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 명령어 설정 →"
+          }
+        }
+      }
+    },
+    "handsfree.openSettings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Vocal Shortcuts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 단축어 열기"
+          }
+        }
+      }
+    },
+    "handsfree.phrases.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can register any phrase in macOS Vocal Shortcuts. These short two-word phrases are easy to trigger and rarely misfire."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 음성 단축어에서는 원하는 문구를 자유롭게 등록할 수 있어요. 아래처럼 짧고 또렷한 문구를 추천해요."
+          }
+        }
+      }
+    },
+    "handsfree.phrases.copied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied \"%@\" to the clipboard."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"%@\" 문구를 클립보드에 복사했어요."
+          }
+        }
+      }
+    },
+    "handsfree.phrases.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggested wake phrases"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추천 호출 문구"
+          }
+        }
+      }
+    },
+    "handsfree.privacyNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS listens on-device for your Vocal Shortcut and controls the orange mic indicator. Sunday Voice only starts recording after the shortcut triggers."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 문구 감지와 주황색 마이크 표시등은 macOS가 이 Mac 안에서 직접 처리해요. Sunday Voice는 음성 단축어가 실행된 뒤에만 받아쓰기를 시작해요."
+          }
+        }
+      }
+    },
+    "handsfree.step1.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click \"Open Vocal Shortcuts\" above (or open System Settings → Accessibility → Speech → Vocal Shortcuts) and click Set Up."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위 \"음성 단축어 열기\" 버튼을 누르거나 시스템 설정 → 손쉬운 사용 → 말하기 → 음성 단축어에서 설정을 시작해 주세요."
+          }
+        }
+      }
+    },
+    "handsfree.step1.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Accessibility → Vocal Shortcuts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "손쉬운 사용 → 음성 단축어 열기"
+          }
+        }
+      }
+    },
+    "handsfree.step2.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick \"Start Dictation\" under Sunday Voice. If it does not appear yet, create a Shortcut with \"Open URLs\" using the link below and pick that Shortcut."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sunday Voice의 \"받아쓰기 시작\" 동작을 선택해 주세요. 목록에 보이지 않으면 단축어 앱에서 아래 주소로 \"URL 열기\" 단축어를 만들어 연결할 수 있어요."
+          }
+        }
+      }
+    },
+    "handsfree.step2.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Start Dictation (or URL action)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"받아쓰기 시작\" 동작 선택 (또는 URL 단축어)"
+          }
+        }
+      }
+    },
+    "handsfree.step3.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Say \"Hey Sunday\" or \"헤이 선데이\" clearly three times. macOS trains and detects the phrase entirely on this Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"Hey Sunday\" 또는 \"헤이 선데이\"를 또렷하게 세 번 말해 주세요. macOS가 이 Mac 안에서만 온디바이스로 학습하고 감지해요."
+          }
+        }
+      }
+    },
+    "handsfree.step3.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record your wake phrase 3 times"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 문구를 3번 말해 등록하기"
+          }
+        }
+      }
+    },
+    "handsfree.step4.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Say your phrase anywhere your cursor is blinking. Pause about 2 seconds to paste, or finish with \"send it\" / \"입력완료\" / \"보내기\" to paste and press Enter in chat apps."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커서가 깜빡이는 곳 어디서나 호출 문구를 말하면 받아쓰기가 시작돼요. 2초 정도 멈추면 붙여넣기만 하고, 끝에 \"입력완료\"·\"보내기\"·\"send it\"을 붙이면 채팅 앱에서 전송까지 해 줘요."
+          }
+        }
+      }
+    },
+    "handsfree.step4.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speak, then send by voice or pause"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말한 뒤 말로 전송하거나 잠깐 멈추기"
+          }
+        }
+      }
+    },
+    "handsfree.steps.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set up with Apple Vocal Shortcuts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 음성 단축어 설정 방법"
+          }
+        }
+      }
+    },
+    "handsfree.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start dictation at your current cursor with Apple Vocal Shortcuts, then finish with a send phrase — no keys needed."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 음성 단축어로 현재 커서에서 바로 받아쓰기를 시작하고, 끝맺음 말로 전송까지 손을 대지 않고 마칠 수 있어요."
+          }
+        }
+      }
+    },
+    "handsfree.test.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Say your Vocal Shortcut phrase now, or click \"Test it\" below to verify cursor dictation right inside this box."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "등록한 음성 단축어 문구를 말해 보거나, 아래 \"테스트하기\" 버튼을 눌러 이 상자에 바로 받아써지는지 확인해 보세요."
+          }
+        }
+      }
+    },
+    "handsfree.test.button": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test it"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스트하기"
+          }
+        }
+      }
+    },
+    "handsfree.test.clear": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지우기"
+          }
+        }
+      }
+    },
+    "handsfree.test.placeholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your spoken test text will appear here…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여기에 테스트 받아쓰기 결과가 나타나요…"
+          }
+        }
+      }
+    },
+    "handsfree.test.received": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Triggered"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 확인됨"
+          }
+        }
+      }
+    },
+    "handsfree.test.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test it"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스트하기"
+          }
+        }
+      }
+    },
+    "handsfree.test.waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready for phrase"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 대기 중"
+          }
+        }
+      }
+    },
+    "handsfree.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hands-free"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성으로 시작·전송"
+          }
+        }
+      }
+    },
+    "handsfree.urlCopied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied!"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사됨"
+          }
+        }
+      }
+    },
+    "handsfree.visual.accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "손쉬운 사용"
+          }
+        }
+      }
+    },
+    "handsfree.visual.flowSend": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"send it\" → ↵"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"입력완료\" → ↵"
+          }
+        }
+      }
+    },
+    "handsfree.visual.flowSpeak": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your message…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "할 말 말하기…"
+          }
+        }
+      }
+    },
+    "handsfree.visual.flowStart": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"Hey Sunday\""
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"헤이 선데이\""
+          }
+        }
+      }
+    },
+    "handsfree.visual.orURLAction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Or Shortcut: Open URLs → wake/cursor"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "또는 단축어: URL 열기 → wake/cursor"
+          }
+        }
+      }
+    },
+    "handsfree.visual.repeatThreeTimes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speak clearly 3 times · on-device"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3번 또렷하게 발화 · 온디바이스 처리"
+          }
+        }
+      }
+    },
+    "handsfree.visual.speech": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말하기"
+          }
+        }
+      }
+    },
+    "handsfree.visual.startAction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Dictation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기 시작"
+          }
+        }
+      }
+    },
+    "handsfree.visual.systemSettings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 설정"
+          }
+        }
+      }
+    },
+    "handsfree.visual.vocalShortcuts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vocal Shortcuts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 단축어"
+          }
+        }
+      }
+    },
     "hud.button.close": {
       "extractionState": "manual",
       "localizations": {
@@ -1085,6 +1932,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "버리기"
+          }
+        }
+      }
+    },
+    "hud.button.downloadLocal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download local"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 모델 받기"
           }
         }
       }
@@ -1153,6 +2017,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "다시 받아쓰기"
+          }
+        }
+      }
+    },
+    "hud.button.setupModel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set up model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 설정"
           }
         }
       }
@@ -1238,6 +2119,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "붙였어요"
+          }
+        }
+      }
+    },
+    "hud.error.subscriptionLocalMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Pro. Get local or upgrade"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro가 없어요. 로컬 모델을 받거나 업그레이드하세요"
           }
         }
       }
@@ -1427,6 +2325,1566 @@
         }
       }
     },
+    "keyname.command": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command (⌘)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command (⌘)"
+          }
+        }
+      }
+    },
+    "keyname.command.where": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next to the space bar"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스페이스바 바로 옆"
+          }
+        }
+      }
+    },
+    "keyname.control": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control (⌃)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control (⌃)"
+          }
+        }
+      }
+    },
+    "keyname.control.where": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom-left next to Fn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "왼쪽 아래 Fn 키 옆"
+          }
+        }
+      }
+    },
+    "keyname.fn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fn (🌐)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fn (🌐)"
+          }
+        }
+      }
+    },
+    "keyname.fn.where": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom-left corner of Mac keyboard"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac 키보드 왼쪽 아래 지구본 키"
+          }
+        }
+      }
+    },
+    "keyname.mouseMiddle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse middle button"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마우스 가운데 버튼"
+          }
+        }
+      }
+    },
+    "keyname.mouseSide1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse side button (Back)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마우스 옆 버튼 (뒤로)"
+          }
+        }
+      }
+    },
+    "keyname.mouseSide2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse side button (Forward)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마우스 옆 버튼 (앞으로)"
+          }
+        }
+      }
+    },
+    "keyname.option": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Option (⌥)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Option (⌥)"
+          }
+        }
+      }
+    },
+    "keyname.option.where": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next to the space bar (Alt on Windows keyboards)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스페이스바 옆 (일반 키보드의 Alt)"
+          }
+        }
+      }
+    },
+    "keyname.rightCommand": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right Command (⌘)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽 Command (⌘)"
+          }
+        }
+      }
+    },
+    "keyname.rightCommand.where": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right of the space bar"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스페이스바 오른쪽"
+          }
+        }
+      }
+    },
+    "keyname.rightOption": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right Option (⌥)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽 Option (⌥)"
+          }
+        }
+      }
+    },
+    "keyname.rightOption.where": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right of the space bar (Right Alt on Windows keyboards)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스페이스바 오른쪽 (일반 키보드의 오른쪽 Alt)"
+          }
+        }
+      }
+    },
+    "keyname.shift": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift (⇧)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift (⇧)"
+          }
+        }
+      }
+    },
+    "keys.add": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add key or button"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 또는 버튼 추가"
+          }
+        }
+      }
+    },
+    "keys.advanced": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extra keys and mouse buttons"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가 키 및 마우스 버튼"
+          }
+        }
+      }
+    },
+    "keys.advanced.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add extra keys or mouse side buttons to any action."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원하는 기능에 추가 키나 마우스 측면 버튼을 더할 수 있어요."
+          }
+        }
+      }
+    },
+    "keys.advanced.proLockedNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extra keys for Pro actions are locked, while saved shortcuts stay stored and inactive."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 기능의 추가 단축키는 잠겨 있고, 저장해 둔 단축키는 비활성 상태로 그대로 보관돼요."
+          }
+        }
+      }
+    },
+    "keys.autoEnter.chatOnlyHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat apps only (Slack, Telegram, Discord, Messages, KakaoTalk, WhatsApp, Teams, ChatGPT, Claude)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅 앱에서만 작동해요 (Slack, Telegram, Discord, 메시지, 카카오톡, WhatsApp, Teams, ChatGPT, Claude 등)."
+          }
+        }
+      }
+    },
+    "keys.autoEnter.emailDocsWarning": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked in email and document apps (Mail, Outlook, Notion, Word, Pages, Notes, browsers) so unfinished drafts are never sent by mistake."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이메일·문서 앱(Mail, Outlook, Notion, Word, Pages, 메모, 브라우저)에서는 실수로 전송되지 않도록 자동으로 꺼져 있어요."
+          }
+        }
+      }
+    },
+    "keys.autoEnter.toggle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press Enter after pasting"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "놓으면 바로 Enter"
+          }
+        }
+      }
+    },
+    "keys.body.onboarding": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep 🌐 Fn, or press any key, mouse button, or combo you like."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 🌐 Fn 키를 그대로 쓰거나 원하는 키, 마우스 버튼, 키 조합을 눌러 바꿀 수 있어요."
+          }
+        }
+      }
+    },
+    "keys.body.settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click any box below and press any key, mouse button, or combo to set it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래 상자를 클릭한 뒤 원하는 키, 마우스 버튼, 키 조합을 눌러 보세요."
+          }
+        }
+      }
+    },
+    "keys.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "keys.capture.boxIdle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click to pick any key, mouse button, or combo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클릭해서 키, 마우스 버튼, 조합 고르기"
+          }
+        }
+      }
+    },
+    "keys.capture.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "keys.capture.confirmedHold": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All set. Hold %@ to talk."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이제 %@ 누르고 말하면 돼요."
+          }
+        }
+      }
+    },
+    "keys.capture.confirmedPress": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All set. Press %@ to polish selected text."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이제 %@ 누르면 선택한 텍스트를 영어로 다듬어요."
+          }
+        }
+      }
+    },
+    "keys.capture.prompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press any key, mouse button, or combo now."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원하는 키, 마우스 버튼, 키 조합을 눌러 보세요."
+          }
+        }
+      }
+    },
+    "keys.capture.saved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved %@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 설정을 저장했어요."
+          }
+        }
+      }
+    },
+    "keys.capture.subhint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use one key, a mouse button, or two keys together. Press Esc to cancel."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 하나, 마우스 버튼, 또는 두 키를 함께 누르세요. 취소하려면 Esc를 누르세요."
+          }
+        }
+      }
+    },
+    "keys.capture.timeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No key pressed in 10 seconds. Try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10초 동안 입력이 없었어요. 다시 시도해 보세요."
+          }
+        }
+      }
+    },
+    "keys.change": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바꾸기"
+          }
+        }
+      }
+    },
+    "keys.conflict.move": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is used by %@. Move it here instead?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 설정은 이미 %@ 기능에서 쓰고 있어요. 여기로 옮길까요?"
+          }
+        }
+      }
+    },
+    "keys.conflict.moveButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move here"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여기로 옮기기"
+          }
+        }
+      }
+    },
+    "keys.fn.conflict.dictation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌐 Fn is set to “Start Dictation”, so holding it will also start Apple dictation."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌐 Fn 키가 “받아쓰기 시작”으로 되어 있어, 누르고 있으면 Apple 받아쓰기도 함께 시작돼요."
+          }
+        }
+      }
+    },
+    "keys.fn.conflict.emoji": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌐 Fn is set to “Show Emoji & Symbols”, so holding it will also open the emoji picker."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌐 Fn 키가 “이모지 및 기호 보기”로 되어 있어, 누르고 있으면 이모지 창도 함께 열려요."
+          }
+        }
+      }
+    },
+    "keys.fn.conflict.input": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌐 Fn is set to “Change Input Source”, so holding it will also switch Korean and English keyboards."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌐 Fn 키가 “입력 소스 변경”으로 되어 있어, 누르고 있으면 한영 키보드도 함께 바뀌어요."
+          }
+        }
+      }
+    },
+    "keys.fn.fix": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fix this setting"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 바꾸기"
+          }
+        }
+      }
+    },
+    "keys.fn.fixed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All set. 🌐 Fn now only starts dictation."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료됐어요. 이제 🌐 Fn 키는 받아쓰기만 시작해요."
+          }
+        }
+      }
+    },
+    "keys.fn.step1": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Keyboard settings (opening now)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키보드 설정을 열어요 (자동으로 열려요)."
+          }
+        }
+      }
+    },
+    "keys.fn.step2": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find the “Press 🌐 key to” menu."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“🌐 키를 눌러 다음 수행:” 메뉴를 찾으세요."
+          }
+        }
+      }
+    },
+    "keys.fn.step3": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose “Do Nothing”."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“아무것도 안 함”을 선택하세요."
+          }
+        }
+      }
+    },
+    "keys.hold": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "꾹 누르기"
+          }
+        }
+      }
+    },
+    "keys.locked.english.input": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내일 오전 디자인 리뷰 30분만 뒤로 미뤄도 괜찮을까요?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내일 오전 디자인 리뷰 30분만 뒤로 미뤄도 괜찮을까요?"
+          }
+        }
+      }
+    },
+    "keys.locked.english.output": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could we push tomorrow morning's design review back by 30 minutes?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could we push tomorrow morning's design review back by 30 minutes?"
+          }
+        }
+      }
+    },
+    "keys.locked.inactiveTag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inactive"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비활성"
+          }
+        }
+      }
+    },
+    "keys.locked.noKey": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Pro to set a shortcut"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 시작 후 설정할 수 있어요"
+          }
+        }
+      }
+    },
+    "keys.locked.polish.input": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "checked the draft, looks good, just update the schedule before Friday"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "초안 확인했고 전반적으로 좋아요. 금요일 전에 schedule 부분만 수정 부탁해요"
+          }
+        }
+      }
+    },
+    "keys.locked.polish.output": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I reviewed the draft and it looks good. Please update the schedule before Friday."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I reviewed the draft and it looks good overall. Please update the schedule before Friday."
+          }
+        }
+      }
+    },
+    "keys.locked.previewLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Result preview"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과 예시"
+          }
+        }
+      }
+    },
+    "keys.locked.signInNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signs in with Google first"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google 로그인 후 진행돼요"
+          }
+        }
+      }
+    },
+    "keys.locked.storedInactive": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your saved shortcut stays on this Mac as inactive and turns on automatically when you start Pro."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장해 둔 단축키는 이 Mac에 비활성 상태로 보관되며, Pro를 시작하면 자동으로 다시 켜져요."
+          }
+        }
+      }
+    },
+    "keys.mouseButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mouse button %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마우스 버튼 %@"
+          }
+        }
+      }
+    },
+    "keys.noFn.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External keyboards often lack 🌐 Fn. Click Change for any key or mouse button, or use Right Option (Alt by space bar)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외장 키보드에는 🌐 Fn 키가 없는 경우가 많아요. 바꾸기를 눌러 다른 키나 마우스 버튼을 고르거나 오른쪽 Option(스페이스바 옆 Alt)을 써 보세요."
+          }
+        }
+      }
+    },
+    "keys.noFn.button": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Right Option (⌥)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽 Option (⌥) 쓰기"
+          }
+        }
+      }
+    },
+    "keys.noFn.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No 🌐 Fn key on your keyboard?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키보드에 🌐 Fn 키가 없나요?"
+          }
+        }
+      }
+    },
+    "keys.polishKeysOnly": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use a key combo with ⌃, ⌥, or ⌘. Mouse buttons and single held keys don't work here."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌃, ⌥, ⌘ 중 하나를 포함한 키 조합만 쓸 수 있어요. 마우스 버튼이나 길게 누르는 키는 안 돼요."
+          }
+        }
+      }
+    },
+    "keys.press": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누르기"
+          }
+        }
+      }
+    },
+    "keys.pro.badge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro"
+          }
+        }
+      }
+    },
+    "keys.pro.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Included with Pro. Your key is ready whenever you upgrade."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 전용 기능이에요. 업그레이드하면 이 키가 바로 작동해요."
+          }
+        }
+      }
+    },
+    "keys.remove": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제"
+          }
+        }
+      }
+    },
+    "keys.restore": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore defaults"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본값 복원"
+          }
+        }
+      }
+    },
+    "keys.restore.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This restores 🌐 Fn, 🌐 Fn + ⇧ Shift, and ⌃⌥T and removes any extra keys."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌐 Fn, 🌐 Fn + ⇧ Shift, ⌃⌥T로 되돌리고 추가한 키는 모두 삭제해요."
+          }
+        }
+      }
+    },
+    "keys.restore.confirmButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복원"
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.allowOtherApps": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also allow outside chat apps (email & document apps stay blocked)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅 앱 외 다른 앱에서도 허용 (이메일·문서 앱은 항상 차단)"
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Say a send phrase at the end of your sentence to strip it, paste, and press Enter automatically."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문장 끝에 전송 명령어를 말하면 명령어를 빼고 붙여넣은 뒤 자동으로 Enter를 눌러요."
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.emailDocsWarning": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always blocked in Mail, Outlook, Notion, Word, Pages, and Notes so unfinished drafts aren't sent by mistake. Use care in browser webmail or web docs."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mail, Outlook, Notion, Word, Pages, 메모에서는 실수로 전송되지 않도록 항상 차단돼요. 브라우저 웹메일·문서에서는 주의해 주세요."
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.example": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only triggers on the final words — e.g. \"See you at 3, send it\" or \"내일 3시에 봬요 입력완료\"."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문장 맨 끝 말에만 반응해요 — 예: \"내일 3시에 봬요 입력완료\" · \"See you at 3, send it\""
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.phrasesLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trigger phrases (comma-separated)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전송 명령어 (쉼표로 구분)"
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset defaults"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본값 복원"
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send by voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말로 전송하기"
+          }
+        }
+      }
+    },
+    "keys.sendByVoice.toggle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Send by voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말로 전송하기 켜기"
+          }
+        }
+      }
+    },
+    "keys.takenByApp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another app already uses that shortcut. Pick a different key."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 앱에서 이미 쓰고 있는 단축키예요. 다른 키를 골라 주세요."
+          }
+        }
+      }
+    },
+    "keys.test.ok": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your key works."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잘 작동해요."
+          }
+        }
+      }
+    },
+    "keys.test.other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You pressed %@. Use it for dictation instead?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 키를 눌렀어요. 이걸로 받아쓰기할까요?"
+          }
+        }
+      }
+    },
+    "keys.test.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press and hold your key now to test it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 키를 꾹 눌러 작동하는지 확인해 보세요."
+          }
+        }
+      }
+    },
+    "keys.test.start": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test your key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 작동 확인"
+          }
+        }
+      }
+    },
+    "keys.test.useOther": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 사용"
+          }
+        }
+      }
+    },
+    "keys.title.onboarding": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose your keys"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용할 키 고르기"
+          }
+        }
+      }
+    },
+    "keys.title.settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keys"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 설정"
+          }
+        }
+      }
+    },
+    "keys.typingKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That key is used for typing. Try a two-key combo, a function key (F1–F19), or a mouse side button."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 키는 평소 글 쓸 때 필요해요. 두 키 조합이나 F1–F19 키, 마우스 옆 버튼을 써 보세요."
+          }
+        }
+      }
+    },
+    "lang.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "언어"
+          }
+        }
+      }
+    },
+    "localWords.add": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가"
+          }
+        }
+      }
+    },
+    "localWords.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These spelling fixes stay on this Mac and apply during Free Local dictation. Nothing leaves your Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여기에 등록한 표기 교정은 이 Mac에만 저장되고 무료 로컬 받아쓰기 때 자동으로 적용돼요. 외부로 전송되지 않아요."
+          }
+        }
+      }
+    },
+    "localWords.emptyBody": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add names or terms that get misheard. For example, change 버셀 to Vercel."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자주 틀리게 들리는 이름이나 용어를 추가해 두세요. 예를 들어 '버셀'을 'Vercel'로 바꿀 수 있어요."
+          }
+        }
+      }
+    },
+    "localWords.emptyTitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No local spelling fixes yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 등록된 표기 교정이 없어요."
+          }
+        }
+      }
+    },
+    "localWords.fromPlaceholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Misheard (e.g. 버셀)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잘못 들리는 말 (예: 버셀)"
+          }
+        }
+      }
+    },
+    "localWords.proBanner": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro adds cloud sync for your word list and learns spelling fixes automatically."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro를 쓰면 단어 목록이 클라우드로 동기화되고, 자주 쓰는 표기도 자동으로 익혀요."
+          }
+        }
+      }
+    },
+    "localWords.saveError": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save your list on this Mac. Please try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에 목록을 저장하지 못했어요. 다시 시도해 보세요."
+          }
+        }
+      }
+    },
+    "localWords.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local spelling fixes"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 표기 교정"
+          }
+        }
+      }
+    },
+    "localWords.toPlaceholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write as (e.g. Vercel)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "바꿀 표기 (예: Vercel)"
+          }
+        }
+      }
+    },
     "meeting.folder": {
       "localizations": {
         "en": {
@@ -1439,6 +3897,108 @@
           "stringUnit": {
             "state": "translated",
             "value": "미팅 전사 폴더 열기"
+          }
+        }
+      }
+    },
+    "meeting.model.downloading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading local speech models…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 음성 모델을 다운로드하고 있어요…"
+          }
+        }
+      }
+    },
+    "meeting.model.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local model setup did not finish. Check your connection and try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 모델 설정을 완료하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "meeting.model.lowDisk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough free disk space for the local speech model (at least 1.5 GB free needed)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 음성 모델을 위한 저장 공간이 부족해요(최소 1.5 GB 여유 공간 필요)."
+          }
+        }
+      }
+    },
+    "meeting.model.preparing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing the model on this Mac…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에서 모델을 준비하고 있어요…"
+          }
+        }
+      }
+    },
+    "meeting.model.progress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading local model — %@%%"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 모델 다운로드 중 — %@%%"
+          }
+        }
+      }
+    },
+    "meeting.model.ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech models ready. Recordings are transcribed on this Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 모델 준비가 끝났어요. 녹음은 이 Mac에서 텍스트로 변환돼요."
           }
         }
       }
@@ -1826,6 +4386,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "진단"
+          }
+        }
+      }
+    },
+    "menu.downloadLocalModel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download local speech model (Free)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 음성 모델 다운로드 (무료)"
           }
         }
       }
@@ -2423,6 +5000,380 @@
         }
       }
     },
+    "menu.wakeWords": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake words"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웨이크워드"
+          }
+        }
+      }
+    },
+    "mode.dictate.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Types your Korean, English, or mixed speech, cleaned up."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한국어, 영어, 섞어 말한 내용을 깔끔하게 정리해 입력해요."
+          }
+        }
+      }
+    },
+    "mode.dictate.example": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um, 내일 client call은 3시예요 → 내일 client call은 3시예요."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "어, 내일 client call은 3시예요 → 내일 client call은 3시예요."
+          }
+        }
+      }
+    },
+    "mode.dictate.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictate"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기"
+          }
+        }
+      }
+    },
+    "mode.english.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Talk in Korean, English, or both, and it types natural English."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한국어, 영어, 섞어 말해도 자연스러운 영어로 입력해요."
+          }
+        }
+      }
+    },
+    "mode.english.example": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내일 3시로 옮길 수 있을까요 → Can we move it to 3 tomorrow?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내일 3시로 옮길 수 있을까요 → Can we move it to 3 tomorrow?"
+          }
+        }
+      }
+    },
+    "mode.english.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictate in English"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영어로 받아쓰기"
+          }
+        }
+      }
+    },
+    "mode.general.downloadModel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download local speech model (Free)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 음성 모델 다운로드 (무료)"
+          }
+        }
+      }
+    },
+    "mode.general.downloadingModel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading local speech model… %d%%"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 음성 모델 다운로드 중… %d%%"
+          }
+        }
+      }
+    },
+    "mode.general.freeLocalNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation runs offline on this Mac right now, and upgrading unlocks Pro Cloud."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 이 Mac에서 오프라인으로 바로 받아쓸 수 있고, 업그레이드하면 Pro 클라우드도 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "mode.general.proCloudNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can switch to offline Free Local Mode anytime with one click."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "언제든 클릭 한 번으로 오프라인 무료 로컬 모드로 전환할 수 있어요."
+          }
+        }
+      }
+    },
+    "mode.general.proLocalNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation stays offline on this Mac, and you can switch back to Pro Cloud anytime."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에서 오프라인으로만 받아쓰며, 언제든 다시 Pro 클라우드로 전환할 수 있어요."
+          }
+        }
+      }
+    },
+    "mode.picker.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Local"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드"
+          }
+        }
+      }
+    },
+    "mode.picker.pro": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro (Cloud)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro (클라우드)"
+          }
+        }
+      }
+    },
+    "mode.polish.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rewrites selected text in clear English. Uses the clipboard if nothing is selected."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 텍스트를 자연스러운 영어로 다듬어 붙여 넣어요. 선택이 없으면 클립보드를 사용해요."
+          }
+        }
+      }
+    },
+    "mode.polish.example": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pls send file by fri → Could you send the file by Friday?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 금요일까지 부탁해요 → Could you send the file by Friday?"
+          }
+        }
+      }
+    },
+    "mode.polish.name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Polish to English"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영어로 다듬기"
+          }
+        }
+      }
+    },
+    "mode.status.freeLocal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using Free Local Mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드로 쓰는 중"
+          }
+        }
+      }
+    },
+    "mode.status.freeLocalUpgrade": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using Free Local Mode · Upgrade to Pro"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드로 쓰는 중 · Pro로 업그레이드"
+          }
+        }
+      }
+    },
+    "mode.status.proCloud": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using Pro Cloud Mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 클라우드 모드로 쓰는 중"
+          }
+        }
+      }
+    },
+    "mode.switch.toLocal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to Free Local Mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드로 전환"
+          }
+        }
+      }
+    },
+    "mode.switch.toProCloud": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to Pro Cloud Mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 클라우드 모드로 전환"
+          }
+        }
+      }
+    },
     "ob.back": {
       "extractionState": "manual",
       "localizations": {
@@ -2701,13 +5652,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Click any text box, hold your key, talk, let go. %@ lives behind the S in your menu bar."
+            "value": "Click any text box, hold your key, talk, and let go. %@ sits behind the S in your menu bar. Change keys anytime in Settings → Keys."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아무 입력 칸이나 누르고, 키를 누른 채 말하고, 놓으세요. %@는 메뉴 막대의 S 아이콘에 있어요."
+            "value": "아무 입력창이나 클릭하고 키를 누른 채 말하고 놓으세요. %@는 메뉴 막대의 S 아이콘에 있고, 설정 → 키 설정에서 언제든 키를 바꿀 수 있어요."
           }
         }
       }
@@ -2742,6 +5693,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 시작하기"
+          }
+        }
+      }
+    },
+    "ob.done.optionalSection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택 사항"
           }
         }
       }
@@ -2933,6 +5901,23 @@
         }
       }
     },
+    "ob.keys.english.localDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live English translation requires Pro."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 영어 번역은 Pro에서 사용할 수 있어요."
+          }
+        }
+      }
+    },
     "ob.keys.fnTip": {
       "extractionState": "manual",
       "localizations": {
@@ -3086,6 +6071,23 @@
         }
       }
     },
+    "ob.keys.proOnly": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 전용"
+          }
+        }
+      }
+    },
     "ob.keys.remove": {
       "extractionState": "manual",
       "localizations": {
@@ -3165,6 +6167,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "텍스트를 선택하고 누르면 자연스러운 영어로 다듬어요. 선택한 내용이 없으면 클립보드를 사용해요."
+          }
+        }
+      }
+    },
+    "ob.keys.tidy.localDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tidy requires Pro."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tidy는 Pro에서 사용할 수 있어요."
           }
         }
       }
@@ -3250,6 +6269,244 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@는 이미 클립보드 다듬기에 쓰여요."
+          }
+        }
+      }
+    },
+    "ob.localModel.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free Local Mode downloads Whisper large-v3-turbo (~660 MB) once so all of your speech stays on this Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드는 Whisper large-v3-turbo 모델(약 660 MB)을 한 번만 다운로드해 모든 음성을 이 Mac 안에서 처리해요."
+          }
+        }
+      }
+    },
+    "ob.localModel.cardBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One-time ~660 MB download (needs ~1.5 GB free space while preparing). Supports English and Korean offline."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최초 1회 약 660 MB를 다운로드해요(준비 중 약 1.5 GB 여유 공간 필요). 오프라인으로 한국어와 영어를 지원해요."
+          }
+        }
+      }
+    },
+    "ob.localModel.cardTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper large-v3-turbo · ~660 MB"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Whisper large-v3-turbo · 약 660 MB"
+          }
+        }
+      }
+    },
+    "ob.localModel.download": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download model (~660 MB)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 다운로드 (약 660 MB)"
+          }
+        }
+      }
+    },
+    "ob.localModel.downloading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading… %@%%"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드 중… %@%%"
+          }
+        }
+      }
+    },
+    "ob.localModel.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The download didn’t finish. Check your internet connection and try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드를 완료하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "ob.localModel.lowDisk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough free space (%@ GB available). At least 1.5 GB free is needed."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장 공간이 부족해요(현재 %@ GB 사용 가능). 최소 1.5 GB의 여유 공간이 필요해요."
+          }
+        }
+      }
+    },
+    "ob.localModel.preparing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing the model on this Mac…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에서 모델을 준비하고 있어요…"
+          }
+        }
+      }
+    },
+    "ob.localModel.readyBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline English and Korean dictation is ready on this Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이제 이 Mac에서 오프라인 한국어·영어 받아쓰기를 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "ob.localModel.readyTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech model ready"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 모델 준비 완료"
+          }
+        }
+      }
+    },
+    "ob.localModel.retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        }
+      }
+    },
+    "ob.localModel.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download the speech model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 모델을 다운로드해 주세요"
+          }
+        }
+      }
+    },
+    "ob.localModel.tryBanner": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download the speech model first to try dictation."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기를 체험하려면 먼저 음성 모델을 다운로드해 주세요."
+          }
+        }
+      }
+    },
+    "ob.localModel.tryDownload": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 다운로드"
           }
         }
       }
@@ -3594,6 +6851,74 @@
         }
       }
     },
+    "ob.pro.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud dictation, real-time AI rewrite, English translation, and Tidy are included in Pro ($19/month USD). Or switch to Free Local Mode with no subscription."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro(월 $19 USD)에는 클라우드 받아쓰기, 실시간 AI 다듬기, 영어 번역, Tidy가 포함되어 있어요. 구독 없이 무료 로컬 모드로 전환할 수도 있어요."
+          }
+        }
+      }
+    },
+    "ob.pro.ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro is active."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro가 활성화되었어요."
+          }
+        }
+      }
+    },
+    "ob.pro.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upgrade to Pro"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro로 시작해 보세요"
+          }
+        }
+      }
+    },
+    "ob.pro.useLocal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Free Local Mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드 사용하기"
+          }
+        }
+      }
+    },
     "ob.rail.setup": {
       "extractionState": "manual",
       "localizations": {
@@ -3668,13 +6993,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your keys"
+            "value": "Keys"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "단축키"
+            "value": "키 설정"
+          }
+        }
+      }
+    },
+    "ob.step.localModel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 인식 모델"
           }
         }
       }
@@ -3709,6 +7051,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "권한"
+          }
+        }
+      }
+    },
+    "ob.step.pro": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro Plan"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 플랜"
           }
         }
       }
@@ -3837,13 +7196,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold your key and say: “Please confirm my appointment for tomorrow at three.” Your words land in the box below. You can also try Korean with your bilingual key."
+            "value": "Hold your dictation key and say: “Please confirm my appointment for tomorrow at three.” Your words appear in the box."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "키를 누른 채 “내일 오후 세 시에 예약 확인해 주세요.”라고 말해 보세요. 아래 칸에 바로 들어가요. 그다음 영어 키도 눌러 보세요."
+            "value": "받아쓰기 키를 누른 채 “내일 오후 세 시에 예약 확인해 주세요.”라고 말해 보세요. 말이 아래 상자에 입력돼요."
+          }
+        }
+      }
+    },
+    "ob.try.body.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold your dictation key and say, “Please confirm my appointment for tomorrow at three.”"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기 키를 누른 채로 “내일 오후 세 시에 예약 확인해 주세요.”라고 말해 보세요."
           }
         }
       }
@@ -3854,13 +7230,47 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Key not doing anything? Type in the box to continue, or skip this step for now."
+            "value": "Key not responding? Test or change it on the key setup screen, or skip for now."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "키가 반응하지 않나요? 칸에 직접 입력해도 넘어갈 수 있고, 이 단계는 건너뛰어도 돼요."
+            "value": "키가 반응하지 않나요? 키 설정 화면에서 테스트하거나 바꿀 수 있어요. 지금은 건너뛰어도 돼요."
+          }
+        }
+      }
+    },
+    "ob.try.keysLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your keys"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정한 키"
+          }
+        }
+      }
+    },
+    "ob.try.openKeys": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open key setup"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 설정 열기"
           }
         }
       }
@@ -4240,17 +7650,18 @@
       }
     },
     "ob.welcome.fine": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Setup takes about two minutes. You can switch between Free Local Mode and Pro anytime in Settings."
+            "value": "Setup takes about two minutes. You can switch between Free and Pro anytime in Settings."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "설정은 2분쯤 걸려요. 설정에서 무료 로컬 모드와 Pro를 언제든 전환할 수 있어요."
+            "value": "설정은 2분 정도 걸려요. 무료와 Pro는 설정에서 언제든 바꿀 수 있어요."
           }
         }
       }
@@ -4289,17 +7700,18 @@
       }
     },
     "ob.welcome.local.body": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dictation and meeting transcripts stay on this Mac using Whisper large-v3-turbo. No account required."
+            "value": "Runs offline on this Mac with no account needed. Downloads a one-time ~660 MB speech model in the background, and nothing leaves your Mac unless you opt in to anonymous usage stats."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "로그인 없이 이 Mac에서 Whisper large-v3-turbo로 받아쓰기와 미팅 전사를 바로 쓸 수 있어요."
+            "value": "계정 없이 이 Mac에서 오프라인으로 작동해요. 처음 한 번 백그라운드에서 약 660 MB 음성 모델을 다운로드하며, 익명 사용 통계에 동의하지 않는 한 어떤 데이터도 Mac 밖으로 나가지 않아요."
           }
         }
       }
@@ -4338,33 +7750,35 @@
       }
     },
     "ob.welcome.pro.badge": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Optional upgrade"
+            "value": "$19/mo USD"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택 업그레이드"
+            "value": "월 $19 USD"
           }
         }
       }
     },
     "ob.welcome.pro.body": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cloud dictation, AI rewrite in your writing style, and Gmail & Slack vocabulary."
+            "value": "Cloud dictation in Korean and English, Dictate in English, Polish to English, and vocabulary synced across Macs."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "클라우드 받아쓰기, 내 말투 AI 다듬기, Gmail·Slack 단어 학습이 필요할 때 로그인해 보세요."
+            "value": "클라우드 한영 받아쓰기, 영어로 받아쓰기, 영어로 다듬기를 쓸 수 있고, 단어장이 모든 Mac에 동기화돼요."
           }
         }
       }
@@ -4386,17 +7800,18 @@
       }
     },
     "ob.welcome.pro.title": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pro (Google sign-in)"
+            "value": "Pro · $19/month"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pro (Google 로그인)"
+            "value": "Pro · 월 $19"
           }
         }
       }
@@ -4503,17 +7918,18 @@
       }
     },
     "settings.account.localBody": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Running locally on this Mac with zero cloud calls. Sign in anytime to unlock Pro cloud features."
+            "value": "No account needed. Your audio and text stay on this Mac, and nothing leaves your Mac unless you opt in to anonymous usage stats in General."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "외부 서버 호출 없이 이 Mac에서 로컬로 실행 중이에요. 언제든 로그인해서 Pro 기능을 쓸 수 있어요."
+            "value": "계정이 필요 없어요. 음성과 텍스트는 이 Mac 안에만 머물며, 일반 설정에서 익명 사용 통계를 켜지 않는 한 어떤 데이터도 Mac 밖으로 나가지 않아요."
           }
         }
       }
@@ -4530,6 +7946,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "무료 로컬 모드"
+          }
+        }
+      }
+    },
+    "settings.calendar.comingSoonBody": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Calendar meeting reminders are coming soon for Pro accounts. You can use macOS Calendar below right now."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro 계정용 Google 캘린더 회의 알림은 곧 지원될 예정이에요. 아래 macOS 캘린더는 지금 바로 쓸 수 있어요."
           }
         }
       }
@@ -4619,6 +8051,54 @@
         }
       }
     },
+    "settings.general.sectionAccuracy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation accuracy"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기 정확도"
+          }
+        }
+      }
+    },
+    "settings.general.sectionApp": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App & Mac"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 및 Mac"
+          }
+        }
+      }
+    },
+    "settings.general.sectionMode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받아쓰기 모드"
+          }
+        }
+      }
+    },
     "settings.guestNoConnections": {
       "extractionState": "manual",
       "localizations": {
@@ -4632,6 +8112,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "게스트는 받아쓰기만 쓸 수 있어요. Gmail·Slack 연결은 포함되지 않아요."
+          }
+        }
+      }
+    },
+    "settings.handsFree": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hands-free"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성으로 시작·전송"
           }
         }
       }
@@ -4665,7 +8162,39 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "단축키"
+            "value": "키 설정"
+          }
+        }
+      }
+    },
+    "settings.language.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dictation always recognizes Korean and English together, regardless of this setting."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 언어와 상관없이 받아쓰기는 언제나 한국어와 영어를 함께 인식해요."
+          }
+        }
+      }
+    },
+    "settings.language.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App display language"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 화면 언어"
           }
         }
       }
@@ -4787,17 +8316,18 @@
       }
     },
     "settings.proFeature.voiceBody": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Free Local Mode transcribes cleanly on this Mac without an account. Sign in with Google under Account to learn your writing style from Gmail and Slack."
+            "value": "Free Local Mode transcribes cleanly on this Mac without an account. Pro unlocks custom writing-style cards."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "무료 로컬 모드는 로그인 없이 이 Mac에서 깔끔하게 받아써요. Gmail·Slack에서 내 말투를 학습하려면 계정 탭에서 Google로 로그인해 주세요."
+            "value": "무료 로컬 모드는 계정 없이도 이 Mac에서 깔끔하게 받아써요. Pro에서는 나만의 문체 스타일 카드를 만들 수 있어요."
           }
         }
       }
@@ -4819,17 +8349,18 @@
       }
     },
     "settings.proFeature.wordsBody": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Free Local Mode uses on-device speech recognition and local replacements without an account. Sign in with Google under Account to sync personal terms from Gmail and Slack."
+            "value": "Free Local Mode uses on-device speech recognition without an account. Pro unlocks synced custom vocabulary."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "무료 로컬 모드는 로그인 없이 이 Mac의 로컬 음성 인식과 치환 사전을 사용해요. Gmail·Slack에서 내 단어를 가져오려면 계정 탭에서 Google로 로그인해 주세요."
+            "value": "무료 로컬 모드는 계정 없이도 기기 내 음성 인식으로 작동해요. Pro에서는 동기화되는 나만의 단어장을 쓸 수 있어요."
           }
         }
       }
@@ -4851,69 +8382,81 @@
       }
     },
     "settings.recentContext": {
-      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use recent dictations as context"
+            "value": "Use recent dictations for context"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "최근 받아쓰기를 맥락으로 사용"
+            "value": "방금 말한 내용 참고하기"
           }
         }
       }
     },
     "settings.recentContext.body": {
-      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your last few dictations and your fixes to them help recognise the next one. They stay on this Mac, are sent only with the next request, and are cleared when you sign out."
+            "value": "If you just said \"Sundayable\", the next sentence spells it the same way. Kept in memory and sent only with the next cloud request."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "방금 말한 내용과 직접 고친 단어로 다음 받아쓰기를 더 정확하게 알아들어요. 기록은 이 Mac 안에만 남고, 다음 요청에만 함께 보내며, 로그아웃하면 지워져요."
+            "value": "방금 'Sundayable'이라고 말했다면 다음 문장에도 같은 표기를 써요. 메모리에만 잠시 두고 다음 클라우드 요청에만 함께 보내요."
+          }
+        }
+      }
+    },
+    "settings.recentContext.localDisabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available only in Pro (Cloud) mode. Off while using Free Local Mode."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro (클라우드) 모드에서만 쓸 수 있어요. 무료 로컬 모드에서는 꺼져 있어요."
           }
         }
       }
     },
     "settings.screenContext": {
-      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use visible screen terms (opt-in)"
+            "value": "Use names and terms on screen"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "화면 용어 힌트 사용 (선택)"
+            "value": "화면에 보이는 이름·용어 참고하기"
           }
         }
       }
     },
     "settings.screenContext.body": {
-      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Extracts proper nouns and English terms from the active window title and nearby text to improve spelling. Password fields are always skipped and nothing is logged."
+            "value": "If \"Vercel\" is on screen, it writes \"Vercel\" instead of guessing the spelling. Password fields are never read."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "현재 창 제목과 커서 주변 텍스트에서 고유명사·영문 용어만 추출해 철자 정확도를 높여요. 비밀번호 입력란은 항상 건너뛰며 기록하지 않아요."
+            "value": "화면에 'Vercel'이 보이면 소리 나는 대로 적지 않고 'Vercel'로 맞춰 써요. 비밀번호 입력란은 절대 읽지 않아요."
           }
         }
       }
@@ -4999,6 +8542,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "다른 앱이 이미 쓰는 단축키예요. 다른 키를 골라 주세요."
+          }
+        }
+      }
+    },
+    "settings.upcoming.mcp.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let your AI tools safely search and use your saved recordings and notes."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용 중인 AI 도구에서 저장된 녹음과 메모를 안전하게 찾고 활용할 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.upcoming.mcp.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personal MCP"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개인 MCP 연결"
+          }
+        }
+      }
+    },
+    "settings.upcoming.notified": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved on this Mac. We'll let you know once it launches."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac에 저장해 뒀어요. 출시되면 알려 드릴게요."
+          }
+        }
+      }
+    },
+    "settings.upcoming.notify": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notify me when ready"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "출시되면 알려 주세요"
+          }
+        }
+      }
+    },
+    "settings.upcoming.section": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coming soon to Pro"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "곧 출시되는 Pro 기능"
+          }
+        }
+      }
+    },
+    "settings.upcoming.watch.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record quick voice notes on Apple Watch and sync the text to your Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Watch로 짧은 메모를 녹음하면 받아쓴 글이 Mac으로 동기화돼요."
+          }
+        }
+      }
+    },
+    "settings.upcoming.watch.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Watch recorder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Watch 녹음"
           }
         }
       }
@@ -5258,6 +8913,159 @@
         }
       }
     },
+    "stats.localHonestNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Free Local Mode, nothing leaves your Mac unless you turn this on."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 로컬 모드에서는 이 옵션을 켜지 않는 한 어떤 데이터도 Mac 밖으로 나가지 않아요."
+          }
+        }
+      }
+    },
+    "stats.neverSent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Never sends audio, text, app names, window titles, screen terms, or anything that identifies you."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성, 텍스트, 앱 이름, 창 제목, 화면 용어나 개인을 식별할 수 있는 정보는 절대 보내지 않아요."
+          }
+        }
+      }
+    },
+    "stats.privacyLink": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy Policy"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개인정보 처리방침"
+          }
+        }
+      }
+    },
+    "stats.resetID": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset random ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "익명 ID 재설정"
+          }
+        }
+      }
+    },
+    "stats.resetIDDone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New random ID created"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 익명 ID로 바꿨어요"
+          }
+        }
+      }
+    },
+    "stats.sectionTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anonymous usage stats"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "익명 사용 통계"
+          }
+        }
+      }
+    },
+    "stats.termsLink": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terms of Service"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이용약관"
+          }
+        }
+      }
+    },
+    "stats.toggleBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off by default. Sends only app version, local or Pro mode, daily dictation count, error codes, and setup step completion using a random ID you can reset anytime."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본값은 꺼짐이에요. 언제든 재설정할 수 있는 익명 ID로 앱 버전, 로컬/Pro 모드, 일일 받아쓰기 횟수, 오류 코드, 초기 설정 완료 단계만 보내요."
+          }
+        }
+      }
+    },
+    "stats.toggleTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share anonymous usage stats"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "익명 사용 통계 보내기"
+          }
+        }
+      }
+    },
     "tidy.error.changed": {
       "extractionState": "manual",
       "localizations": {
@@ -5421,6 +9229,23 @@
         }
       }
     },
+    "tidy.error.subscriptionRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tidy requires Pro ($19/mo)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tidy는 Pro(월 $19) 구독이 필요해요."
+          }
+        }
+      }
+    },
     "tidy.error.tooLong": {
       "extractionState": "manual",
       "localizations": {
@@ -5557,6 +9382,142 @@
         }
       }
     },
+    "updates.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional product news and release notes from Sundayable Inc., never auto-subscribed on Google sign-in."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sundayable Inc.에서 보내는 제품 소식과 릴리스 노트로, Google 로그인 시 자동으로 구독되지 않아요."
+          }
+        }
+      }
+    },
+    "updates.consentCheckbox": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I agree to receive Sunday Voice product updates and release notes by email from Sundayable Inc. I can unsubscribe anytime via the link in any email."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sundayable Inc.로부터 Sunday Voice 제품 업데이트와 릴리스 노트 이메일을 받는 데 동의해요. 이메일 안의 링크로 언제든 수신을 취소할 수 있어요."
+          }
+        }
+      }
+    },
+    "updates.emailPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "you@example.com"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이메일 주소"
+          }
+        }
+      }
+    },
+    "updates.error": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't subscribe right now. Please check your email and try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 등록할 수 없어요. 이메일 주소를 확인하고 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "updates.submit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscribe"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구독하기"
+          }
+        }
+      }
+    },
+    "updates.submitting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscribing..."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "등록하는 중..."
+          }
+        }
+      }
+    },
+    "updates.subscribed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscribed. You can unsubscribe anytime via the link in any email."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "등록했어요. 이메일 안의 링크로 언제든 수신을 취소할 수 있어요."
+          }
+        }
+      }
+    },
+    "updates.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get product updates"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트 소식 받기"
+          }
+        }
+      }
+    },
     "vocab.add": {
       "extractionState": "manual",
       "localizations": {
@@ -5621,6 +9582,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "취소"
+          }
+        }
+      }
+    },
+    "vocab.empty.guestBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a word above to keep its spelling consistent whenever you dictate."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위에 단어를 추가해 두면 받아쓸 때마다 정확한 표기로 일관되게 입력돼요."
           }
         }
       }
@@ -5944,6 +9922,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "내 단어"
+          }
+        }
+      }
+    },
+    "voice.delete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제"
+          }
+        }
+      }
+    },
+    "voice.delete.confirm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this voice card? You can write a new one or pick a preset anytime."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 말투 카드를 삭제할까요? 언제든 새로 쓰거나 프리셋을 고를 수 있어요."
+          }
+        }
+      }
+    },
+    "voice.delete.confirmButton": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete card"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카드 삭제"
+          }
+        }
+      }
+    },
+    "voice.delete.error": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not delete this voice card. Please try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말투 카드를 삭제하지 못했어요. 다시 시도해 보세요."
+          }
+        }
+      }
+    },
+    "voice.emptyCard": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No voice card yet. Type your own rules here or pick a preset."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 말투 카드가 없어요. 원하는 규칙을 직접 쓰거나 프리셋을 골라 보세요."
           }
         }
       }

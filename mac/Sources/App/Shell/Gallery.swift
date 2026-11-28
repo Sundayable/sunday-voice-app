@@ -63,6 +63,25 @@ enum Gallery {
         add("01-signin") { m in m.auth.previewSignedIn(nil); m.step = .signIn }
         add("01-consent") { m in m.auth.previewSignedIn(user); m.auth.previewNeedsConsent(); m.step = .signIn }
         add("01-signin-done") { m in m.auth.previewSignedIn(user); m.step = .signIn }
+        add("01b-pro-upgrade") { m in
+            m.auth.previewSignedIn(UserProfile(id: "ext", email: "user@gmail.com", name: "Minji", picture: nil, guest: true))
+            m.step = .proUpgrade
+        }
+        add("04b-local-model-download") { m in
+            m.auth.previewSignedIn(nil); m.step = .localModel; m.localModelReady = false
+        }
+        add("04b-local-model-progress") { m in
+            m.auth.previewSignedIn(nil); m.step = .localModel; m.localModelReady = false; m.localModelDownloading = true; m.localModelProgress = 0.42
+        }
+        add("04b-local-model-ready") { m in
+            m.auth.previewSignedIn(nil); m.step = .localModel; m.localModelReady = true
+        }
+        add("04-keys-local-mode") { m in
+            m.auth.previewSignedIn(nil); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.keyTest.listening = true
+        }
+        add("07-try-local-missing") { m in
+            m.auth.previewSignedIn(nil); m.step = .tryIt; m.localModelReady = false
+        }
         add("02-permissions-none") { m in m.auth.previewSignedIn(user); m.step = .permissions; m.permissions = PermissionState(microphone: .notDetermined, accessibility: false) }
         add("02-permissions-mic-on") { m in m.auth.previewSignedIn(user); m.step = .permissions; m.permissions = PermissionState(microphone: .authorized, accessibility: false) }
         add("02-permissions-retry") { m in m.auth.previewSignedIn(user); m.step = .permissions; m.permissions = PermissionState(microphone: .authorized, accessibility: false); m.retryVisible = [.accessibility] }
@@ -70,14 +89,37 @@ enum Gallery {
         add("02-permissions-input-monitoring") { m in m.auth.previewSignedIn(user); m.step = .permissions; m.permissions = PermissionState(microphone: .authorized, accessibility: true, inputMonitoringNeeded: true, inputMonitoring: false) }
         add("03-mic-quiet") { m in m.auth.previewSignedIn(user); m.step = .mic; m.micLevel = 0.01 }
         add("03-mic-heard") { m in m.auth.previewSignedIn(user); m.step = .mic; m.micLevel = 0.2; m.micHeard = true }
-        add("04-keys-new-user") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers }
+        add("04-keys-new-user") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.keyTest.listening = true }
+        add("04-keys-signedin-free") { m in
+            m.auth.previewSignedIn(UserProfile(id: "free-user", email: "free@example.com", name: "Minji", picture: nil, guest: true))
+            m.billing = BillingSummary(plan: "free", status: "none", entitled: false, pro_required: true, price_usd_monthly: 19, current_period_end: nil, cancel_at_period_end: false, has_customer: false, checkout_available: true)
+            m.step = .keys; m.triggers = Prefs.defaultTriggers; m.tidyKeys = [.default]; m.keyTest.listening = true
+        }
+        add("04-keys-test-ok") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.keyTest.ok = true }
+        add("04-keys-fn-conflict") { m in m.auth.previewSignedIn(nil); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.fnUsage = .inputSource; m.keyTest.listening = true }
+        add("04-keys-fn-emoji") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.fnUsage = .emoji; m.keyTest.listening = true }
+        add("04-keys-no-fn") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.keyTest.missedFn = true; m.keyTest.listening = true }
+        add("04-keys-test-other") { m in
+            m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers
+            m.keyTest.other = .modifierHold(keys: [.rightOption], mode: .bilingual, holdMilliseconds: 180)
+        }
         add("04-keys-dan") { m in
             m.auth.previewSignedIn(user); m.step = .keys
-            m.triggers = [.modifierHold(keys: [.control], mode: .bilingual, holdMilliseconds: 180), .mouseButton(number: 4, mode: .bilingual), .key(keyCode: 79, modifiers: 0, mode: .english)]
-            m.captured = OnboardingModel.describe(.key(keyCode: 79, modifiers: 0, mode: .english))
+            m.triggers = [.modifierHold(keys: [.fn], mode: .bilingual, holdMilliseconds: 180), .mouseButton(number: 3, mode: .bilingual), .mouseButton(number: 4, mode: .bilingual),
+                          .modifierHold(keys: [.control], mode: .bilingual, holdMilliseconds: 180), .modifierHold(keys: [.fn, .shift], mode: .english, holdMilliseconds: 180)]
+            m.tidyKeys = [.default, TidyShortcut(trigger: .key(keyCode: 79, modifiers: 0, mode: .bilingual)) ?? .default]
+            m.keyTest.ok = true
         }
-        add("04-keys-capturing") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.capturing = true; m.capturingMode = .english }
-        add("04-keys-typing-key") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.keyMessage = L("ob.keys.typingKey") }
+        add("04-keys-capturing") { m in
+            m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.capturing = true; m.capturingMode = .bilingual
+            m.capturingReplacement = Prefs.defaultTriggers.first
+        }
+        add("04-keys-move") { m in
+            m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers
+            m.pendingMove = PendingKeyMove(trigger: .modifierHold(keys: [.fn, .shift], mode: .bilingual, holdMilliseconds: 180), mode: .bilingual, replacing: Prefs.defaultTriggers.first, from: .english)
+        }
+        add("04-keys-typing-key") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.keyMessage = L("keys.typingKey") }
+        add("04-keys-reset-confirm") { m in m.auth.previewSignedIn(user); m.step = .keys; m.triggers = Prefs.defaultTriggers; m.confirmingReset = true; m.keyTest.ok = true }
         add("05-connect") { m in m.auth.previewSignedIn(user); m.step = .connect }
         add("05-connect-pending") { m in m.auth.previewSignedIn(user); m.step = .connect; m.connections = ["gmail": "pending", "slack": "not_connected"] }
         add("05-connect-done") { m in m.auth.previewSignedIn(user); m.step = .connect; m.connections = ["gmail": "active", "slack": "active"] }
@@ -103,15 +145,15 @@ enum Gallery {
         UILanguage.choice = "ko"
         for shot in shots.filter({ ["01-signin", "01-consent", "02-permissions-none", "04-keys-new-user", "07-try-done"].contains($0.name) }) {
             let model = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
-            model.isPreview = true; shot.configure(model)
+            model.isPreview = true; model.fnUsage = .nothing; shot.configure(model)
             model.triggers = Prefs.defaultTriggers
             if shot.name != "01-signin" {
-                model.auth.previewSignedIn(UserProfile(id: "tester-guide", email: "owner@example.com", name: "대표님", picture: nil, guest: true))
+                model.auth.previewSignedIn(UserProfile(id: "tester-guide", email: "user@example.com", name: "Minji", picture: nil, guest: true))
             }
             if shot.name == "01-consent" { model.auth.previewNeedsConsent() }
             if shot.name == "07-try-done" { model.tryText = "내일 오후 세 시에 예약 확인해 주세요." }
             let host = NSHostingView(rootView: OnboardingView(model: model))
-            host.frame = NSRect(x: 0, y: 0, width: 760, height: 560)
+            host.frame = NSRect(x: 0, y: 0, width: 760, height: 600)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .aqua); window.contentView = host
             host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.15))
@@ -134,10 +176,11 @@ enum Gallery {
                 for shot in shots {
                     let model = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
                     model.isPreview = true
+                    model.fnUsage = .nothing
                     shot.configure(model)
                     let view = OnboardingView(model: model)
                     let host = NSHostingView(rootView: view)
-                    host.frame = NSRect(x: 0, y: 0, width: 760, height: 560)
+                    host.frame = NSRect(x: 0, y: 0, width: 760, height: 600)
                     let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
                     window.appearance = NSAppearance(named: appearance)
                     window.contentView = host
@@ -168,7 +211,7 @@ enum Gallery {
                 for (sizeName, size) in [("default", NSSize(width: 820, height: 600)), ("minimum", NSSize(width: 720, height: 520))] {
                 for pane in SettingsView.Pane.allCases {
                     let model = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
-                    model.isPreview = true
+                    model.isPreview = true; model.fnUsage = .nothing
                     model.auth.previewSignedIn(UserProfile(id: "preview", email: "you@company.com", name: "You", picture: nil))
                     model.connections = ["gmail": "active", "slack": "active"]
                     model.cards = sampleCards; model.savedCards = sampleCards
@@ -188,9 +231,38 @@ enum Gallery {
                     }
                 }
             }
+                // Locked Pro Keys states in Settings (signed-out Free Local + signed-in Free with stored binding).
+                for (shotName, signedInFree, pane) in [
+                    ("settings-keys-free-local", false, SettingsView.Pane.keys),
+                    ("settings-keys-signedin-free", true, SettingsView.Pane.keys),
+                    ("settings-general-signedin-free", true, SettingsView.Pane.general),
+                ] {
+                    let lockedModel = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
+                    lockedModel.isPreview = true; lockedModel.fnUsage = .nothing
+                    if signedInFree {
+                        lockedModel.auth.previewSignedIn(UserProfile(id: "free-user", email: "free@example.com", name: "Minji", picture: nil, guest: true))
+                        lockedModel.billing = BillingSummary(plan: "free", status: "none", entitled: false, pro_required: true, price_usd_monthly: 19, current_period_end: nil, cancel_at_period_end: false, has_customer: false, checkout_available: true)
+                    } else {
+                        lockedModel.auth.previewSignedIn(nil)
+                    }
+                    lockedModel.triggers = Prefs.defaultTriggers
+                    lockedModel.tidyKeys = [.default]
+                    let lockedWords = VocabularyModel(api: api); lockedWords.preview = true
+                    let lockedHost = NSHostingView(rootView: SettingsView(model: lockedModel, words: lockedWords, pane: pane, meetings: makePreviewMeetings(), onSignOut: {}))
+                    lockedHost.frame = NSRect(x: 0, y: 0, width: 820, height: 600)
+                    let lockedWin = NSWindow(contentRect: lockedHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    lockedWin.appearance = NSAppearance(named: appearance); lockedWin.contentView = lockedHost
+                    lockedHost.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+                    if let rep = lockedHost.bitmapImageRepForCachingDisplay(in: lockedHost.bounds) {
+                        lockedHost.cacheDisplay(in: lockedHost.bounds, to: rep)
+                        try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("\(shotName)-\(language)-\(appearanceName).png"))
+                        count += 1
+                    }
+                }
+
                 // Empty "My words" state.
                 let emptyModel = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
-                emptyModel.isPreview = true
+                emptyModel.isPreview = true; emptyModel.fnUsage = .nothing
                 emptyModel.auth.previewSignedIn(UserProfile(id: "preview", email: "you@company.com", name: "You", picture: nil))
                 let emptyWords = VocabularyModel(api: api); emptyWords.preview = true; emptyWords.list = VocabList(terms: [], stats: .init(total: 0, hints: 0, replacements: 0))
                 let emptyHost = NSHostingView(rootView: SettingsView(model: emptyModel, words: emptyWords, pane: .words, meetings: makePreviewMeetings(), onSignOut: {}))

@@ -116,7 +116,7 @@ final class TidierTests: XCTestCase {
     }
 
     func testAuthQuotaAndOldServerStopWithoutFallback() async {
-        for (failure, expected) in [(FailureCode.notSignedIn, TidyError.notSignedIn), (.quotaExceeded, .quotaExceeded), (.serverOutdated, .serverOutdated)] {
+        for (failure, expected) in [(FailureCode.notSignedIn, TidyError.notSignedIn), (.quotaExceeded, .quotaExceeded), (.subscriptionRequired, .subscriptionRequired), (.serverOutdated, .serverOutdated)] {
             let b = Backend(); b.replies[.primary] = .failure(failure); b.replies[.fallback] = .success("x")
             do { _ = try await Tidier(backend: b).tidy("hello"); XCTFail() }
             catch { XCTAssertEqual(error as? TidyError, expected) }

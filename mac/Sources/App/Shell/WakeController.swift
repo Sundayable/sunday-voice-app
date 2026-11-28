@@ -5,31 +5,69 @@ import Speech
 import os
 import DictationEngine
 
-/// Hands-free dictation started by a wake phrase ("헤이 첼로" / "헤이 그룻").
+/// User-configured target for local Vocal Shortcuts hands-free dictation (`<scheme>://wake/<id>`).
+/// Stored privately at `~/Library/Application Support/SundayVoice/wake-targets.json`; never hard-coded in source.
+struct WakeTarget: Codable, Equatable, Sendable {
+    var id: String
+    var displayName: String?
+    var bundleID: String
+    var openURL: String?
+    var axFieldRole: String?
+    var axFieldDescription: String?
+    var useUnicodeTyping: Bool?
+
+    var shouldUseUnicodeTyping: Bool {
+        useUnicodeTyping ?? (bundleID == "ru.keepcoder.Telegram")
+    }
+}
+
+struct WakeTargetConfig: Codable, Equatable, Sendable {
+    var menuLabel: String?
+    var targets: [WakeTarget]
+
+    init(menuLabel: String? = nil, targets: [WakeTarget] = []) {
+        self.menuLabel = menuLabel
+        self.targets = targets
+    }
+}
+
+enum WakeTargetStore {
+    static var defaultFileURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/SundayVoice/wake-targets.json")
+    }
+
+    static func loadConfig(from url: URL = defaultFileURL) -> WakeTargetConfig {
+        guard let data = try? Data(contentsOf: url) else { return WakeTargetConfig() }
+        if let wrapped = try? JSONDecoder().decode(WakeTargetConfig.self, from: data) {
+            return wrapped
+        }
+        if let list = try? JSONDecoder().decode([WakeTarget].self, from: data) {
+            return WakeTargetConfig(targets: list)
+        }
+        return WakeTargetConfig()
+    }
+
+    static func target(id: String, from url: URL = defaultFileURL) -> WakeTarget? {
+        let normalized = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return nil }
+        return loadConfig(from: url).targets.first { $0.id.lowercased() == normalized }
+    }
+}
+
+/// Optional developer/power-user hands-free dictation started by macOS Vocal Shortcuts
+/// opening `<scheme>://wake/<target-id>`.
 ///
-/// The phrase itself is spotted on-device by macOS Vocal Shortcuts, which then opens
-/// `<scheme>://wake/<target>`. This controller focuses the target chat input, starts a dictation
-/// without a held key, and listens on-device (Speech framework, never the network) for the end phrase
-/// "입력했어" / "입력완료" (or a final "엔터") → stop, strip the phrase, paste, press Return. A long silence stops without Return.
+/// Hidden and disabled by default. To opt in, set `wakeDeveloperEnabled = true` in UserDefaults
+/// and/or place personal targets in `~/Library/Application Support/SundayVoice/wake-targets.json`.
 /// No audio or text is stored or logged here.
 @MainActor
 final class WakeController {
-    enum Target: String {
-        case cello, grok, aside
-        /// Telegram bot chats (username); nil = Grok Bot desktop app.
-        var telegramBot: String? {
-            switch self {
-            case .cello: return "Cellomello_bot"
-            case .aside: return "ANNH4J2XXVO21UNI3HKENB_bot"
-            case .grok: return nil
-            }
-        }
-        var bundleID: String { telegramBot == nil ? "com.anysphere.sand" : "ru.keepcoder.Telegram" }
-    }
     /// Last text Sunday Voice inserted per app (memory only, never stored or logged).
     private var lastInserted: [String: String] = [:]
     /// The target of the current hands-free session (re-opened right before delivery).
-    private var currentTarget: Target?
+    private var currentTarget: WakeTarget?
+    var configURL: URL = WakeTargetStore.defaultFileURL
 
     private let log = Logger(subsystem: "ca.sundayable.sunday-voice", category: "wake")
     private let engine: DictationEngine
@@ -44,11 +82,41 @@ final class WakeController {
     private var enterTimer: Timer?
     /// Wait this long after a trailing "엔터" for more words before sending.
     var enterPause = 0.8
+    /// True when the active hands-free session is public cursor-only dictation (`<scheme>://wake/cursor` or App Intent).
+    private var cursorMode = false
+    /// Audio-level VAD tracking for public cursor-only hands-free (works in EN & KO with zero Speech permission).
+    private var heardAudioSpeech = false
+    private var lastAudioSpeechAt = 0.0
+    var cursorSilenceSeconds = 2.2
+    var cursorNoSpeechSeconds = 10.0
+    private static let speechRMSThreshold: Float = 0.015
 
+    /// Hidden developer opt-in (default OFF for all standard users).
+    static var developerEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "wakeDeveloperEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "wakeDeveloperEnabled") }
+    }
+
+    /// Menu visibility: hidden unless developer mode is opted in or a private local target config exists.
+    static func isFeatureVisible(configURL: URL = WakeTargetStore.defaultFileURL) -> Bool {
+        developerEnabled || !WakeTargetStore.loadConfig(from: configURL).targets.isEmpty
+    }
+
+    /// Wake-word listening toggle (default OFF for all users).
     static var enabled: Bool {
-        get { UserDefaults.standard.object(forKey: "wakeEnabled") as? Bool ?? true }
+        get { UserDefaults.standard.object(forKey: "wakeEnabled") as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: "wakeEnabled") }
     }
+
+    static func menuTitle(configURL: URL = WakeTargetStore.defaultFileURL) -> String {
+        let base = L("menu.wakeWords")
+        if let label = WakeTargetStore.loadConfig(from: configURL).menuLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !label.isEmpty {
+            return "\(base) (\(label))"
+        }
+        return base
+    }
+
     /// End-phrase hints for the on-device recognizer and the STT prompt (default on; `wakeHints` = false to compare).
     static var hints: Bool { UserDefaults.standard.object(forKey: "wakeHints") as? Bool ?? true }
     static let endPhraseWords = ["입력완료", "입력 완료", "입력했어", "엔터"]
@@ -69,18 +137,64 @@ final class WakeController {
     }
 
     func handle(_ url: URL) {
-        guard url.host == "wake", let target = Target(rawValue: url.lastPathComponent) else { return }
-        guard Self.enabled else { log.info("wake_ignored_disabled"); return }
+        guard url.host == "wake" else { return }
+        if HandsFreeSupport.isCursorWakeURL(url) {
+            startAtCurrentCursor(source: "url")
+            return
+        }
+        guard Self.isFeatureVisible(configURL: configURL), Self.enabled else {
+            log.info("wake_ignored_disabled")
+            return
+        }
+        guard let target = WakeTargetStore.target(id: url.lastPathComponent, from: configURL) else {
+            log.info("wake_ignored_unknown_target")
+            return
+        }
         let t0 = ProcessInfo.processInfo.systemUptime
         Task { @MainActor in await self.run(target, t0: t0) }
     }
 
-    /// Diagnostics (`defaults write … diagnostics -bool true`): focus the target like a wake, then send a
+    /// Public Phase 1 hands-free action (Apple Vocal Shortcuts App Intent or `<scheme>://wake/cursor`).
+    /// Starts dictation directly at the user's current cursor with no personal targets or app switching.
+    /// Stops automatically on silence (or when triggered again); spoken "Send by voice" phrases are
+    /// stripped and Enter is pressed only in allowed chat apps via `DictationEngine.prepareDelivery`.
+    func startAtCurrentCursor(source: String = "url") {
+        HandsFreeCursorBridge.shared.recordTrigger(source: source)
+        if engine.isHandsFreeActive {
+            finish(submit: false, reason: "retrigger")
+            return
+        }
+        currentTarget = nil
+        cursorMode = true
+        heardAudioSpeech = false
+        startedAt = ProcessInfo.processInfo.systemUptime
+        lastAudioSpeechAt = startedAt
+        lastChangeAt = startedAt
+        lastPartial = ""
+        finishing = false
+        let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let expectedBundle = (frontBundle == Bundle.main.bundleIdentifier) ? nil : frontBundle
+        guard engine.beginHandsFree(mode: .bilingual, expectedBundleID: expectedBundle, cursorOnly: true) else {
+            cursorMode = false
+            log.notice("wake_cursor_engine_refused source=\(source, privacy: .public)")
+            return
+        }
+        armWatchdog()
+        log.notice("wake_cursor_started source=\(source, privacy: .public) app=\(frontBundle ?? "nil", privacy: .public)")
+    }
+
+    /// Diagnostics (`defaults write … diagnostics -bool true`): focus the configured target like a wake, then send a
     /// fixed transcript through the same hands-free delivery. Deterministic test without a microphone.
     func debugDeliver(_ url: URL) {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let value = { (name: String) in items.first { $0.name == name }?.value }
-        guard let target = Target(rawValue: value("target") ?? "cello"), let text = value("text"), !text.isEmpty else { return }
+        let config = WakeTargetStore.loadConfig(from: configURL)
+        let target: WakeTarget? = if let slug = value("target"), !slug.isEmpty {
+            config.targets.first { $0.id.lowercased() == slug.lowercased() }
+        } else {
+            config.targets.first
+        }
+        guard let target, let text = value("text"), !text.isEmpty else { return }
         let submit = value("submit") == "1"
         Task { @MainActor in
             self.currentTarget = target
@@ -139,13 +253,13 @@ final class WakeController {
         }
     }
 
-    private func run(_ target: Target, t0: Double) async {
+    private func run(_ target: WakeTarget, t0: Double) async {
         if engine.isHandsFreeActive { finish(submit: false, reason: "retrigger"); return }
-        let focused: Bool
+        cursorMode = false
         currentTarget = target
-        focused = await focus(target)
+        let focused = await focus(target)
         let t1 = ProcessInfo.processInfo.systemUptime
-        log.notice("wake_focus target=\(target.rawValue, privacy: .public) ok=\(focused, privacy: .public) ms=\(Int((t1 - t0) * 1000), privacy: .public)")
+        log.notice("wake_focus target=\(target.id, privacy: .public) ok=\(focused, privacy: .public) ms=\(Int((t1 - t0) * 1000), privacy: .public)")
         guard focused else { return }
         let bundleID = target.bundleID
         // Another app can take focus back right after ours (e.g. a window on another display).
@@ -161,19 +275,20 @@ final class WakeController {
 
     // MARK: targets
 
-    /// Right before typing: bring the target back to front and put the caret in its field again.
-    /// Telegram: re-open the Cello chat (the user or Telegram may have navigated away while recording).
+    /// Right before typing: bring the configured target back to front and put the caret in its field again.
     /// Returns the settle time before typing.
     private func refocus(_ bundleID: String?) -> Double {
         guard let bundleID, let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return 0.25 }
         var settle = 0.25
-        if bundleID == "ru.keepcoder.Telegram", let bot = currentTarget?.telegramBot, let url = URL(string: "tg://resolve?domain=\(bot)") {
-            NSWorkspace.shared.open(url); settle = 0.6
+        if let rawURL = currentTarget?.openURL, let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            settle = 0.6
         }
         app.activate()
-        if bundleID == "com.anysphere.sand" {
+        if let role = currentTarget?.axFieldRole, !role.isEmpty,
+           let description = currentTarget?.axFieldDescription, !description.isEmpty {
             let root = AXUIElementCreateApplication(app.processIdentifier)
-            if let prompt = Self.find(in: root, role: "AXTextArea", description: "Prompt") {
+            if let prompt = Self.find(in: root, role: role, description: description) {
                 AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
                 var value: CFTypeRef?
                 AXUIElementCopyAttributeValue(prompt, kAXValueAttribute as CFString, &value)
@@ -206,30 +321,25 @@ final class WakeController {
         return false
     }
 
-    private func focus(_ target: Target) async -> Bool {
-        if let bot = target.telegramBot { return await focusTelegram(bot: bot) }
-        return await focusGrokPrompt()
-    }
-
-    private func focusTelegram(bot: String) async -> Bool {
-        guard let url = URL(string: "tg://resolve?domain=\(bot)") else { return false }
-        NSWorkspace.shared.open(url)
-        NSRunningApplication.runningApplications(withBundleIdentifier: "ru.keepcoder.Telegram").first?.activate()
-        guard await waitFront("ru.keepcoder.Telegram", seconds: 3) else { return false }
-        // Telegram focuses the message field once the chat is shown.
-        try? await Task.sleep(nanoseconds: 250_000_000)
-        return true
-    }
-
-    private func focusGrokPrompt() async -> Bool {
-        let bundleID = "com.anysphere.sand"
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return false }
+    private func focus(_ target: WakeTarget) async -> Bool {
+        if let rawURL = target.openURL, let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            NSRunningApplication.runningApplications(withBundleIdentifier: target.bundleID).first?.activate()
+            guard await waitFront(target.bundleID, seconds: 3) else { return false }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            return true
+        }
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: target.bundleID).first else { return false }
         app.activate()
-        guard await waitFront(bundleID, seconds: 3) else { return false }
+        guard await waitFront(target.bundleID, seconds: 3) else { return false }
+        guard let role = target.axFieldRole, !role.isEmpty,
+              let description = target.axFieldDescription, !description.isEmpty else {
+            return true
+        }
         let root = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        guard let prompt = Self.find(in: root, role: "AXTextArea", description: "Prompt") else { return false }
-        return AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
+        guard let field = Self.find(in: root, role: role, description: description) else { return false }
+        return AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
     }
 
     private static func postKey(_ code: CGKeyCode, flags: CGEventFlags = []) {
@@ -289,17 +399,43 @@ final class WakeController {
         }
     }
 
-    /// Audio queue → convert Int16 24 kHz mono to Float32 for the recognizer.
+    /// Audio queue → convert Int16 24 kHz mono to Float32 for the recognizer and compute RMS energy
+    /// for public cursor hands-free silence detection.
     nonisolated private func feed(_ data: Data) {
         let frames = data.count / 2
-        guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: Self.pcmFormat, frameCapacity: AVAudioFrameCount(frames)) else { return }
-        buffer.frameLength = AVAudioFrameCount(frames)
-        let out = buffer.floatChannelData![0]
-        data.withUnsafeBytes { raw in
-            let src = raw.bindMemory(to: Int16.self)
-            for i in 0..<frames { out[i] = Float(src[i]) / 32768 }
+        guard frames > 0 else { return }
+        var sumSquares: Float = 0
+        let req = liveRequest
+        if let req, let buffer = AVAudioPCMBuffer(pcmFormat: Self.pcmFormat, frameCapacity: AVAudioFrameCount(frames)) {
+            buffer.frameLength = AVAudioFrameCount(frames)
+            let out = buffer.floatChannelData![0]
+            data.withUnsafeBytes { raw in
+                let src = raw.bindMemory(to: Int16.self)
+                for i in 0..<frames {
+                    let s = Float(src[i]) / 32768
+                    out[i] = s
+                    sumSquares += s * s
+                }
+            }
+            req.append(buffer)
+        } else {
+            data.withUnsafeBytes { raw in
+                let src = raw.bindMemory(to: Int16.self)
+                for i in 0..<frames {
+                    let s = Float(src[i]) / 32768
+                    sumSquares += s * s
+                }
+            }
         }
-        liveRequest?.append(buffer)
+        let rms = sqrtf(sumSquares / Float(frames))
+        if rms >= Self.speechRMSThreshold {
+            let now = ProcessInfo.processInfo.systemUptime
+            DispatchQueue.main.async { MainActor.assumeIsolated {
+                guard self.cursorMode, self.engine.isHandsFreeActive, !self.finishing else { return }
+                self.heardAudioSpeech = true
+                self.lastAudioSpeechAt = now
+            } }
+        }
     }
 
     /// Benchmark: when the end phrase was first seen (uptime).
@@ -324,11 +460,19 @@ final class WakeController {
 
     private func armWatchdog() {
         watchdog?.invalidate()
-        watchdog = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let now = ProcessInfo.processInfo.systemUptime
                 if !self.engine.isHandsFreeActive, now - self.startedAt > 2 { self.stopRecognizer(); return }
+                if self.cursorMode {
+                    if !self.heardAudioSpeech, now - self.startedAt > self.cursorNoSpeechSeconds {
+                        self.finish(submit: false, reason: "no_speech")
+                    } else if self.heardAudioSpeech, now - self.lastAudioSpeechAt > self.cursorSilenceSeconds {
+                        self.finish(submit: false, reason: "silence")
+                    }
+                    return
+                }
                 if self.lastPartial.isEmpty, now - self.startedAt > self.noSpeechSeconds { self.finish(submit: false, reason: "no_speech") }
                 else if !self.lastPartial.isEmpty, now - self.lastChangeAt > self.silenceSeconds { self.finish(submit: false, reason: "silence") }
             }
@@ -338,9 +482,9 @@ final class WakeController {
     private func finish(submit: Bool, reason: String) {
         guard !finishing else { return }
         finishing = true
-        let send = submit && !Self.dryRun
+        let send = !cursorMode && submit && !Self.dryRun
         if submit && Self.dryRun { log.info("wake_dryrun_would_submit") }
-        log.notice("wake_finish reason=\(reason, privacy: .public) submit=\(send, privacy: .public) seconds=\(Int(ProcessInfo.processInfo.systemUptime - self.startedAt), privacy: .public)")
+        log.notice("wake_finish reason=\(reason, privacy: .public) cursor=\(self.cursorMode, privacy: .public) submit=\(send, privacy: .public) seconds=\(Int(ProcessInfo.processInfo.systemUptime - self.startedAt), privacy: .public)")
         if reason == "no_speech" { engine.cancelHandsFree() } else { engine.finishHandsFree(submit: send) }
         stopRecognizer()
     }
@@ -348,6 +492,8 @@ final class WakeController {
     private func stopRecognizer() {
         watchdog?.invalidate(); watchdog = nil
         enterTimer?.invalidate(); enterTimer = nil
+        cursorMode = false
+        heardAudioSpeech = false
         liveRequest = nil
         request?.endAudio(); task?.cancel()
         request = nil; task = nil; recognizer = nil

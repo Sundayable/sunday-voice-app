@@ -1,4 +1,53 @@
 import SwiftUI
+import DictationEngine
+
+/// On-device replacement list editor (`~/Library/Application Support/SundayVoice/local-replacements.json`).
+/// Works completely offline in Free Local Mode with zero server calls.
+@MainActor
+final class LocalWordsModel: ObservableObject {
+    @Published var rules: [LocalReplacementRule] = []
+    @Published var fromText = ""
+    @Published var toText = ""
+    @Published var error: String?
+    private let dictionary: LocalPersonalDictionary
+
+    init(dictionary: LocalPersonalDictionary = LocalPersonalDictionary()) {
+        self.dictionary = dictionary
+        self.rules = dictionary.loadRules()
+    }
+
+    func reload() {
+        rules = dictionary.loadRules()
+    }
+
+    func saveEntry() {
+        let from = fromText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let to = toText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !from.isEmpty, !to.isEmpty else { return }
+        do {
+            rules = try dictionary.upsertRule(from: from, to: to)
+            fromText = ""
+            toText = ""
+            error = nil
+        } catch {
+            self.error = L("localWords.saveError")
+        }
+    }
+
+    func edit(_ rule: LocalReplacementRule) {
+        fromText = rule.from
+        toText = rule.to
+    }
+
+    func remove(_ rule: LocalReplacementRule) {
+        do {
+            rules = try dictionary.removeRule(from: rule.from)
+            error = nil
+        } catch {
+            self.error = L("localWords.saveError")
+        }
+    }
+}
 
 /// "My words": the personal vocabulary used as dictation hints and spelling fixes.
 /// Editable list + refresh from Gmail/Slack + on-device import from local AI history.
@@ -76,10 +125,12 @@ final class VocabularyModel: ObservableObject {
 
 struct VocabularyView: View {
     @ObservedObject var model: VocabularyModel
+    @StateObject private var localWords = LocalWordsModel()
     /// Inside Settings the pane supplies insets and size; standalone it is its own window.
     var embedded = false
     var isGuest = false
     var isSignedOut = false
+    var isLocalMode = false
     var onOpenAccount: (() -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
 
@@ -93,22 +144,87 @@ struct VocabularyView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
-            StepHeader(L("vocab.title"), L("vocab.body"))
-            if isSignedOut {
-                Card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(verbatim: L("settings.proFeature.wordsTitle")).font(Theme.display(16))
-                        Text(verbatim: L("settings.proFeature.wordsBody"))
-                            .font(Theme.text(13)).foregroundStyle(Theme.muted(scheme))
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let onOpenAccount {
-                            Button(L("settings.proFeature.openAccount"), action: onOpenAccount).buttonStyle(GhostButton())
+            if isSignedOut || isLocalMode {
+                VStack(alignment: .leading, spacing: 6) {
+                    ModeBadge(kind: .freeAndPro)
+                    StepHeader(L("localWords.title"), L("localWords.body"))
+                }
+                HStack(spacing: 8) {
+                    TextField(L("localWords.fromPlaceholder"), text: $localWords.fromText)
+                        .textFieldStyle(.roundedBorder)
+                    Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted(scheme))
+                    TextField(L("localWords.toPlaceholder"), text: $localWords.toText, onCommit: localWords.saveEntry)
+                        .textFieldStyle(.roundedBorder)
+                    Button(L("localWords.add")) { localWords.saveEntry() }
+                        .buttonStyle(PrimaryButton())
+                        .disabled(localWords.fromText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                  localWords.toText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                ScrollView {
+                    if localWords.rules.isEmpty {
+                        VStack(spacing: 6) {
+                            Image(systemName: "character.book.closed")
+                                .font(.system(size: 20)).foregroundStyle(Theme.muted(scheme))
+                            Text(verbatim: L("localWords.emptyTitle"))
+                                .font(Theme.text(13.5, medium: true))
+                            Text(verbatim: L("localWords.emptyBody"))
+                                .font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 150).padding(20)
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(localWords.rules, id: \.from) { rule in
+                                HStack(spacing: 10) {
+                                    Button { localWords.edit(rule) } label: {
+                                        HStack(spacing: 8) {
+                                            Text(verbatim: rule.from)
+                                                .font(Theme.text(13)).foregroundStyle(Theme.muted(scheme))
+                                            Image(systemName: "arrow.right")
+                                                .font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted(scheme))
+                                            Text(verbatim: rule.to)
+                                                .font(Theme.text(13.5, medium: true)).foregroundStyle(Theme.text(scheme))
+                                            Spacer(minLength: 8)
+                                        }
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    Button { localWords.remove(rule) } label: {
+                                        Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .accessibilityLabel("\(L("keys.remove")) \(rule.from)")
+                                }
+                                .padding(.vertical, 8).padding(.horizontal, 12)
+                                Rectangle().fill(Theme.rule(scheme)).frame(height: 1)
+                            }
                         }
                     }
                 }
-                .frame(maxWidth: 520)
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panel(scheme)))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.rule(scheme)))
+                if let error = localWords.error {
+                    Text(verbatim: error).font(Theme.text(12)).foregroundStyle(.red)
+                }
+                if isSignedOut {
+                    HStack(spacing: 10) {
+                        Text(verbatim: L("localWords.proBanner"))
+                            .font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        if let onOpenAccount {
+                            Button(L("settings.proFeature.openAccount"), action: onOpenAccount)
+                                .buttonStyle(.link).font(Theme.text(12, medium: true))
+                        }
+                    }
+                }
             } else {
+            VStack(alignment: .leading, spacing: 6) {
+                ModeBadge(kind: .proCloudOnly)
+                StepHeader(L("vocab.title"), L("vocab.body"))
+            }
             if let s = model.list?.stats {
                 Text(verbatim: L("vocab.stats", "\(s.total)", "\(s.hints)", "\(s.replacements)").uppercased())
                     .font(Theme.label(10.5)).foregroundStyle(Theme.muted(scheme))
@@ -136,7 +252,7 @@ struct VocabularyView: View {
                              : (UILanguage.isKorean ? "검색 결과가 없어요" : "No matching words"))
                             .font(Theme.text(13.5, medium: true))
                         Text(verbatim: model.query.trimmingCharacters(in: .whitespaces).isEmpty
-                             ? (UILanguage.isKorean ? "위에서 단어를 직접 추가하거나 Gmail·Slack에서 가져올 수 있어요." : "Add a word above or refresh from Gmail & Slack.")
+                             ? (isGuest ? L("vocab.empty.guestBody") : (UILanguage.isKorean ? "위에서 단어를 직접 추가하거나 Gmail·Slack에서 가져올 수 있어요." : "Add a word above or refresh from Gmail & Slack."))
                              : (UILanguage.isKorean ? "다른 검색어로 찾아보세요." : "Try a different search term."))
                             .font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
                     }
@@ -180,7 +296,10 @@ struct VocabularyView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(Theme.text(scheme))
-        .onAppear { if !model.preview && !isSignedOut { model.load() } }
+        .onAppear {
+            localWords.reload()
+            if !model.preview && !isSignedOut && !isLocalMode { model.load() }
+        }
         .sheet(isPresented: Binding(get: { model.importStage != .idle }, set: { if !$0 { model.importStage = .idle } })) {
             ImportSheet(model: model)
         }

@@ -4,7 +4,7 @@
 
 Hold a key, speak naturally in Korean, English, or both, and release — text lands right where your cursor is. **Starts free and 100% local on your Mac by default** with Apple Silicon speech models (no sign-in required), with optional **Sunday Voice Pro ($19/mo, Google sign-in)** for low-latency cloud streaming and personal voice rewriting.
 
-> **[Download Sunday Voice v0.3.20 for macOS (Apple Silicon)](https://github.com/Sundayable/sunday-voice-app/releases/tag/v0.3.20)** — Apple Developer ID signed & notarized.
+> **[Download Sunday Voice v0.3.33 for macOS (Apple Silicon)](https://github.com/Sundayable/sunday-voice-app/releases/tag/v0.3.33)** — Apple Developer ID signed & notarized.
 
 ---
 
@@ -42,7 +42,7 @@ Hold a key, speak naturally in Korean, English, or both, and release — text la
 
 ## Download & Install
 
-1. Download **`Sunday-Voice-0.3.20-macOS-arm64.zip`** from [Releases → v0.3.20](https://github.com/Sundayable/sunday-voice-app/releases/tag/v0.3.20).
+1. Download **`SundayVoice-0.3.33.zip`** from [Releases → v0.3.33](https://github.com/Sundayable/sunday-voice-app/releases/tag/v0.3.33).
 2. *(Optional)* Verify the SHA-256 checksum against `SHA256SUMS.txt`:
    ```bash
    shasum -a 256 -c SHA256SUMS.txt
@@ -108,5 +108,5 @@ Built by **[Sundayable](https://sundayable.com)**.
 - **선택형 Pro (월 $19 · Google 로그인):** 더 빠른 클라우드 받아쓰기, 내 말투 맞춤 AI 다듬기, Gmail·Slack 단어 학습이 필요할 때만 온보딩이나 **설정 → 계정**에서 Google로 로그인해 업그레이드하면 돼요.
 - **한·영 빠른 받아쓰기:** 단축키나 마우스 버튼을 누른 채 한국어·영어를 섞어 말하면 커서 위치에 바로 입력돼요. 화면 용어 힌트(선택)와 발화 중 자가 수정(*“내일 3시 말고 모레 4시로”*)을 지원해요.
 - **로컬 미팅 녹음 + 화자 분리:** 녹음 중에는 모델 부하 없이 안정적으로 저장하고, 미팅이 끝나면 이 Mac에서 화자별로(`You`, `Speaker 1`, `Speaker 2`) 전사해요. 진행률과 남은 시간(ETA)을 실시간으로 확인할 수 있고, 창을 닫아도 백그라운드에서 계속 저장돼요. Google 캘린더 연결도 선택 사항이에요.
-- **설치 방법:** [GitHub Releases v0.3.20](https://github.com/Sundayable/sunday-voice-app/releases/tag/v0.3.20)에서 공증된 `Sunday-Voice-0.3.20-macOS-arm64.zip`을 받아 압축을 풀고 `응용 프로그램` 폴더에 옮겨 실행해 주세요. (Apple Silicon Mac · macOS 14+, 미팅 시스템 오디오 녹음은 macOS 15+ 필요)
+- **설치 방법:** [GitHub Releases v0.3.33](https://github.com/Sundayable/sunday-voice-app/releases/tag/v0.3.33)에서 공증된 `SundayVoice-0.3.33.zip`을 받아 압축을 풀고 `응용 프로그램` 폴더에 옮겨 실행해 주세요. (Apple Silicon Mac · macOS 14+, 미팅 시스템 오디오 녹음은 macOS 15+ 필요)
 - **라이선스:** macOS 앱 및 로컬 엔진 코드는 `AGPL-3.0-or-later`로 공개되며, Sundayable/Sunday Voice 상표 및 로고는 [TRADEMARK.md](TRADEMARK.md) 기준을 따라요.

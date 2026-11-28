@@ -84,10 +84,14 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(model.hidesCloudSteps)
         XCTAssertTrue(model.canContinue)
 
-        // Signed-out onboarding skips cloud-only Connect and Voice steps.
+        // Signed-out onboarding includes Local Speech Model step and skips cloud-only Connect and Voice steps.
         model.step = .keys
         model.next()
+        XCTAssertEqual(model.step, .localModel)
+        model.next()
         XCTAssertEqual(model.step, .tryIt)
+        model.back()
+        XCTAssertEqual(model.step, .localModel)
         model.back()
         XCTAssertEqual(model.step, .keys)
 
@@ -101,11 +105,48 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(model.step, .connect)
     }
 
+    func testExternalNonProSignInLandsOnProUpgradeAndCanSwitchToLocalMode() {
+        let savedLocal = UserDefaults.standard.object(forKey: "localDictationEnabled")
+        defer {
+            if let savedLocal { UserDefaults.standard.set(savedLocal, forKey: "localDictationEnabled") }
+            else { UserDefaults.standard.removeObject(forKey: "localDictationEnabled") }
+        }
+        UserDefaults.standard.removeObject(forKey: "localDictationEnabled")
+
+        let auth = AuthService(storage: MemoryAuthStorage())
+        auth.previewSignedIn(UserProfile(id: "ext", email: "ext@gmail.com", name: "Ext", picture: nil, guest: true))
+        let model = OnboardingModel(auth: auth, api: APIClient(auth: auth), monitor: PermissionMonitor(), engine: MockDictationEngine())
+        model.step = .signIn
+        XCTAssertTrue(model.showProUpgradeStep)
+        XCTAssertTrue(model.effectiveLocalDictation, "non-Pro account stays usable in Free Local Mode immediately")
+        model.didSignIn()
+        XCTAssertEqual(model.step, .proUpgrade)
+        XCTAssertTrue(model.canContinue, "Pro upgrade step never traps a non-Pro user in a dead state")
+
+        // Switching to Free Local Mode advances to permissions + localModel.
+        model.switchToFreeLocalMode()
+        XCTAssertTrue(model.effectiveLocalDictation)
+        XCTAssertFalse(model.needsProUpgrade)
+        XCTAssertEqual(model.step, .permissions)
+        XCTAssertTrue(model.visibleSteps.contains(.localModel))
+    }
+
+    func testLocalModelDownloadChecksDiskSpaceBeforeStarting() {
+        let auth = AuthService(storage: MemoryAuthStorage())
+        let model = OnboardingModel(auth: auth, api: APIClient(auth: auth), monitor: PermissionMonitor(), engine: MockDictationEngine())
+        model.diskSpaceProvider = { 500_000_000 } // 0.5 GB < 1.5 GB required
+        model.downloadLocalModel()
+        XCTAssertFalse(model.localModelDownloading)
+        XCTAssertNotNil(model.localModelError)
+        XCTAssertTrue(model.localModelError?.contains("0.5") == true)
+    }
+
     func testTriggerIdentityTracksPhysicalInputAcrossModes() {
         let english = TriggerKind.key(keyCode: 79, modifiers: 0, mode: .english)
         XCTAssertEqual(english.inputKey, english.with(mode: .bilingual).inputKey)
         XCTAssertNotEqual(english.inputKey, TriggerKind.key(keyCode: 80, modifiers: 0, mode: .english).inputKey)
-        XCTAssertEqual(OnboardingModel.describe(.mouseButton(number: 4, mode: .bilingual)), L("ob.keys.mouseButton", "5"))
+        XCTAssertEqual(OnboardingModel.describe(.mouseButton(number: 4, mode: .bilingual)), L("keyname.mouseSide2"))
+        XCTAssertEqual(OnboardingModel.describe(.mouseButton(number: 5, mode: .bilingual)), L("keys.mouseButton", "6"))
         XCTAssertEqual(OnboardingModel.describe(english), "F18")
         XCTAssertNotNil(OnboardingModel.problem(with: .key(keyCode: 0, modifiers: 0, mode: .english)))
         XCTAssertNil(OnboardingModel.problem(with: english))

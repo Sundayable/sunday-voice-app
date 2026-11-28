@@ -16,8 +16,13 @@ final class FakeSocket: TranscriptionSocket {
     var maximumTurns: Int = .max
     /// Prompt updates and appends in the order they reached the socket.
     var log: [String] = []
+    var connectError: Error?
     func updatePrompt(_ prompt: String) { self.prompt = prompt; log.append("prompt:" + prompt) }
-    func connect() async throws { connects += 1; isReady = true; connectedAt = uptime(); prompt = basePrompt }
+    func connect() async throws {
+        connects += 1
+        if let connectError { throw connectError }
+        isReady = true; connectedAt = uptime(); prompt = basePrompt
+    }
     func append(_ pcm: Data) { appended += pcm.count; log.append("audio") }
     func commit() { commits += 1 }
     func close() { closes += 1; isReady = false }
@@ -113,13 +118,17 @@ final class TurnPipelineTests: XCTestCase {
         socket.onEvent?(.completed(item: "one", transcript: "First sentence."))
         socket.onEvent?(.delta(item: "two", text: "Second sentence."))
         try? await Task.sleep(nanoseconds: 80_000_000)
-        XCTAssertEqual(rewriter.calls.map(\.text), ["First sentence."])
+        // Both the committed first piece and the active tail segment rewrite independently during
+        // speech without ever re-rewriting the combined turn.
+        XCTAssertEqual(rewriter.calls.map(\.text), ["First sentence.", "Second sentence."])
         pipeline.audio(Data(count: 4800)); pipeline.stop()
         socket.onEvent?(.committed(item: "two", previous: "one"))
         socket.onEvent?(.completed(item: "two", transcript: "Second sentence."))
         await waitFor(self.result != nil)
         XCTAssertEqual(result, "First sentence. Second sentence.")
         XCTAssertEqual(rewriter.calls.map(\.text), ["First sentence.", "Second sentence."])
+        guard case .result(_, _, let stats)? = events.last else { return XCTFail() }
+        XCTAssertTrue(stats.finalRewriteStartedBeforeSTTFinal, "Tail segment must reuse speculative rewrite on release")
     }
     func testUsedRelayReconnectsBeforeNextTurnSoItsFullAudioBudgetIsAvailable() async {
         let (pipeline, socket) = make(FakeRewriter { text, _ in text })
@@ -132,8 +141,72 @@ final class TurnPipelineTests: XCTestCase {
         XCTAssertEqual(pipeline.turnCount, 1)
         await pipeline.start(id: "second", mode: .bilingual, app: nil)
         XCTAssertEqual(socket.connects, 1); XCTAssertEqual(socket.closes, 1)
-        XCTAssertEqual(pipeline.turnCount, 0)
+        XCTAssertEqual(pipeline.turnCount, 1, "the fresh session is counted as used by the second turn")
         pipeline.shutdown()
+    }
+
+    /// Dan 2026-11-27 15:40: "no speech" then "stt_busy" twice. A turn that ends without text has still
+    /// opened a turn on the relay; reusing that session made the next dictation fail.
+    func testNoSpeechTurnRetiresTheRelaySessionSoTheNextTurnGetsAFreshOne() async {
+        let (pipeline, socket) = make(FakeRewriter { text, _ in text })
+        socket.maximumTurns = 1
+        await pipeline.start(id: "quiet", mode: .bilingual, app: nil)
+        pipeline.audio(Data(count: 9600)); pipeline.stop()
+        socket.onEvent?(.completed(item: "i", transcript: "  "))
+        await waitFor(self.errorCode != nil)
+        XCTAssertEqual(errorCode, "no_speech")
+        XCTAssertEqual(socket.closes, 1, "the used session is closed right away")
+        events = []
+        await pipeline.start(id: "next", mode: .bilingual, app: nil)
+        XCTAssertEqual(socket.connects, 1, "the next turn opens a fresh session instead of reusing the used one")
+        pipeline.audio(Data(count: 4800)); pipeline.stop()
+        socket.onEvent?(.committed(item: "n", previous: nil))
+        socket.onEvent?(.completed(item: "n", transcript: "Next turn works."))
+        await waitFor(self.result != nil)
+        XCTAssertEqual(result, "Next turn works.")
+    }
+
+    func testBusySessionMidTurnIsReplacedOnceAndTheAudioReplayed() async {
+        let (pipeline, socket) = make(FakeRewriter { text, _ in text })
+        socket.maximumTurns = 1
+        await pipeline.start(id: "busy", mode: .bilingual, app: nil)
+        pipeline.audio(Data(count: 9600))
+        XCTAssertEqual(socket.appended, 9600)
+        socket.onEvent?(.error(code: "stt_busy"))
+        await waitFor(socket.connects == 1)
+        await waitFor(socket.appended == 19_200)
+        XCTAssertEqual(socket.appended, 19_200, "everything captured so far is replayed on the fresh session")
+        pipeline.audio(Data(count: 4800))
+        XCTAssertEqual(socket.appended, 24_000, "live audio continues on the fresh session")
+        pipeline.stop()
+        socket.onEvent?(.committed(item: "r", previous: nil))
+        socket.onEvent?(.completed(item: "r", transcript: "Recovered without a retry button."))
+        await waitFor(self.result != nil)
+        XCTAssertEqual(result, "Recovered without a retry button.")
+        XCTAssertTrue(events.contains { if case .retrying = $0 { return true }; return false })
+        XCTAssertFalse(events.contains { if case .degraded = $0 { return true }; return false }, "no 'recording on this Mac' notice")
+    }
+
+    func testSecondSessionFailureFallsBackToLocalRecording() async {
+        let (pipeline, socket) = make(FakeRewriter { text, _ in text })
+        await pipeline.start(id: "twice", mode: .bilingual, app: nil)
+        pipeline.audio(Data(count: 9600))
+        socket.onEvent?(.error(code: "stt_busy"))
+        await waitFor(socket.connects == 1)
+        socket.onEvent?(.disconnected)
+        XCTAssertTrue(events.contains { if case .degraded = $0 { return true }; return false })
+        pipeline.stop()
+        await waitFor(self.errorCode != nil)
+        XCTAssertEqual(errorCode, "connection_lost")
+    }
+
+    func testAccountErrorsAreNotRetried() {
+        XCTAssertFalse(TurnPipeline.isRetryable("STT_quota_exceeded"))
+        XCTAssertFalse(TurnPipeline.isRetryable("STT_consent_required"))
+        XCTAssertFalse(TurnPipeline.isRetryable("STT_audio_too_long"))
+        XCTAssertTrue(TurnPipeline.isRetryable("STT_stt_busy"))
+        XCTAssertTrue(TurnPipeline.isRetryable("connection_lost"))
+        XCTAssertTrue(TurnPipeline.isRetryable("STT_relay_not_ready"))
     }
     func testAgedRelayReconnectsBeforeAFullLengthTurnCanStart() async {
         let (pipeline, socket) = make(FakeRewriter { text, _ in text })
@@ -290,6 +363,8 @@ final class TurnPipelineTests: XCTestCase {
         await pipeline.start(id: "h", mode: .bilingual, app: nil)
         pipeline.audio(Data(count: 9600))
         socket.onEvent?(.disconnected)
+        await waitFor(socket.connects >= 2) // one transparent retry on a fresh session
+        socket.onEvent?(.disconnected)      // that one drops too
         XCTAssertTrue(pipeline.isBusy, "Offline capture continues locally until release")
         pipeline.stop()
         await waitFor(self.errorCode != nil)
@@ -360,6 +435,8 @@ final class TurnPipelineTests: XCTestCase {
         pipeline.audio(Data(count: 9600))
         socket.onEvent?(.delta(item: "one", text: "Keep these words 42"))
         socket.onEvent?(.error(code: "server_error"))
+        await waitFor(socket.connects == 1) // transparent retry
+        socket.onEvent?(.error(code: "server_error")) // the retry fails too: keep the first session's words
         XCTAssertTrue(pipeline.isBusy)
         pipeline.audio(Data(count: 9600))
         pipeline.stop()
@@ -437,6 +514,26 @@ final class TurnPipelineTests: XCTestCase {
         socket.onEvent?(.completed(item: "a", transcript: "Do not lose the first word"))
         await waitFor(self.result != nil)
         XCTAssertEqual(result, "Do not lose the first word")
+    }
+
+    func testSubscriptionRequiredFailsImmediatelyWithoutDegrading() async {
+        let (pipeline, socket) = make(FakeRewriter { text, _ in text })
+        socket.isReady = false
+        socket.connectError = FailureCode.subscriptionRequired
+        var events: [TurnPipeline.Event] = []
+        pipeline.onEvent = { events.append($0) }
+        await pipeline.start(id: "sub-1", mode: .bilingual, app: nil)
+        XCTAssertEqual(events, [.error(id: "sub-1", code: "subscription_required")])
+        XCTAssertFalse(pipeline.isBusy)
+
+        // Mid-turn STT subscription_required error also fails immediately instead of recording locally.
+        socket.connectError = nil
+        events = []
+        await pipeline.start(id: "sub-2", mode: .bilingual, app: nil)
+        socket.onEvent?(.error(code: "subscription_required"))
+        XCTAssertTrue(events.contains(.error(id: "sub-2", code: "STT_subscription_required")))
+        XCTAssertFalse(events.contains(where: { if case .degraded = $0 { return true }; return false }))
+        XCTAssertFalse(pipeline.isBusy)
     }
 
 }

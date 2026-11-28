@@ -60,6 +60,48 @@ public final class LocalPersonalDictionary: Sendable {
             .sorted { $0.from.utf16.count > $1.from.utf16.count }
     }
 
+    /// Saves replacement rules atomically to `local-replacements.json` (0600 permissions, no server sync).
+    public func saveRules(_ rules: [LocalReplacementRule]) throws {
+        var seen = Set<String>()
+        var cleaned: [LocalReplacementRule] = []
+        for rule in rules {
+            let from = rule.from.trimmingCharacters(in: .whitespacesAndNewlines)
+            let to = rule.to.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !from.isEmpty, !to.isEmpty else { continue }
+            let key = from.lowercased()
+            if seen.insert(key).inserted {
+                cleaned.append(LocalReplacementRule(from: from, to: to))
+            }
+        }
+        let dir = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(cleaned)
+        try data.write(to: fileURL, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+    }
+
+    /// Adds or updates a replacement pair (`from` → `to`) and returns the saved list.
+    @discardableResult
+    public func upsertRule(from: String, to: String) throws -> [LocalReplacementRule] {
+        let f = from.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = to.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !f.isEmpty, !t.isEmpty else { return loadRules() }
+        var rules = loadRules().filter { $0.from.caseInsensitiveCompare(f) != .orderedSame }
+        rules.insert(LocalReplacementRule(from: f, to: t), at: 0)
+        try saveRules(rules)
+        return loadRules()
+    }
+
+    /// Removes a replacement pair by its `from` key and returns the saved list.
+    @discardableResult
+    public func removeRule(from: String) throws -> [LocalReplacementRule] {
+        let rules = loadRules().filter { $0.from.caseInsensitiveCompare(from) != .orderedSame }
+        try saveRules(rules)
+        return loadRules()
+    }
+
     /// Canonical target terms to bias local STT (`promptTokens`) alongside screen terms.
     public func promptTerms(limit: Int = 16) -> [String] {
         var seen = Set<String>()

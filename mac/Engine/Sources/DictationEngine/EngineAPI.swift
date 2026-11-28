@@ -34,6 +34,10 @@ public enum EngineState: Equatable, Sendable {
     case failed(EngineError)
 }
 
+public extension EngineState {
+    var isHeld: Bool { if case .held = self { return true }; return false }
+}
+
 public enum EngineError: Error, Equatable, Sendable {
     case notSignedIn
     case microphoneDenied
@@ -67,7 +71,8 @@ public struct DeliveryRecord: Codable, Equatable, Sendable {
 }
 
 public enum DictationNotice: Equatable, Sendable {
-    case finishingSoon(seconds: Int), recordingLocally, retrying, saveFailed, recoveryAvailable
+    /// `recoveredHeld`: a background re-transcription finished but focus moved; the text is on the clipboard.
+    case finishingSoon(seconds: Int), recordingLocally, retrying, saveFailed, recoveryAvailable, recoveredHeld
 }
 
 /// Audio level 0…1 for the HUD waveform, ~20 Hz while listening.
@@ -90,6 +95,72 @@ public extension AccessTokenProvider {
     func invalidateAccessToken(_ rejectedToken: String) async {}
 }
 
+/// Safe allowlist policy for optional "Press Enter after pasting" (auto-send on key release).
+/// Restricted by default to messaging / AI chat apps so email clients, document editors, and web forms
+/// are never submitted accidentally.
+public enum AutoEnterPolicy {
+    /// Known macOS chat and AI messaging apps where pressing Return sends a short message cleanly.
+    public static let defaultAllowedBundleIDs: Set<String> = [
+        "com.tinyspeck.slackmacgap",         // Slack
+        "ru.keepcoder.Telegram",             // Telegram
+        "org.telegram.desktop",              // Telegram Desktop
+        "com.hnc.Discord",                   // Discord
+        "com.apple.MobileSMS",               // Messages
+        "net.whatsapp.WhatsApp",             // WhatsApp
+        "desktop.WhatsApp",                  // WhatsApp Desktop
+        "com.kakao.KakaoTalkMac",            // KakaoTalk
+        "jp.naver.line.mac",                 // LINE
+        "org.whispersystems.signal-desktop", // Signal
+        "com.tencent.xinWeChat",             // WeChat
+        "com.microsoft.teams2",              // Microsoft Teams
+        "com.microsoft.teams",               // Microsoft Teams Classic
+        "com.openai.chat",                   // ChatGPT
+        "com.anthropic.claudefordesktop",    // Claude
+        "com.facebook.archon",               // Messenger
+        "com.facebook.archon.developerID",   // Messenger
+        "com.beeper.desktop",                // Beeper
+    ]
+
+    /// Email clients and document/note editors where auto-Enter must never fire.
+    public static let blockedEmailAndDocBundleIDs: Set<String> = [
+        "com.apple.mail",
+        "com.microsoft.Outlook",
+        "com.readdle.SparkDesktop",
+        "com.mimestream.Mimestream",
+        "com.superhuman.electron",
+        "org.mozilla.thunderbird",
+        "com.apple.iWork.Pages",
+        "com.apple.iWork.Numbers",
+        "com.apple.iWork.Keynote",
+        "com.apple.Notes",
+        "com.apple.TextEdit",
+        "com.microsoft.Word",
+        "com.microsoft.Excel",
+        "com.microsoft.Powerpoint",
+        "notion.id",
+        "md.obsidian",
+        "net.shinyfrog.bear",
+        "com.ulyssesapp.mac",
+    ]
+
+    public static func isAllowed(bundleID: String?, extraAllowedBundleIDs: Set<String> = [],
+                                 allowNonBlockedApps: Bool = false) -> Bool {
+        guard let raw = bundleID?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return false
+        }
+        if raw.hasPrefix("ca.sundayable.sunday-voice") {
+            return false
+        }
+        if blockedEmailAndDocBundleIDs.contains(raw) {
+            return false
+        }
+        if allowNonBlockedApps {
+            return true
+        }
+        return defaultAllowedBundleIDs.contains(raw) || extraAllowedBundleIDs.contains(raw)
+    }
+}
+
 public struct EngineConfiguration: Sendable {
     public var apiBaseURL: URL
     public var triggers: [TriggerKind]
@@ -102,6 +173,17 @@ public struct EngineConfiguration: Sendable {
     public var useScreenContext: Bool
     /// Run dictation 100% locally on this Mac using WhisperKit + local replacements (zero external APIs).
     public var localDictationEnabled: Bool
+    /// Optional per-action "Press Enter after pasting" modes (default empty = OFF).
+    /// Applies only to allowed chat apps (`AutoEnterPolicy`).
+    public var autoEnterModes: Set<DictationMode> = []
+    /// Optional user-added bundle IDs allowed for auto-Enter (email/doc blocklist still applies).
+    public var autoEnterExtraBundleIDs: Set<String> = []
+    /// Spoken "Send by voice" end command (default ON): strip exact final command phrase, paste, and press Return.
+    public var sendByVoiceEnabled: Bool = true
+    /// Configurable spoken send phrases (KO + EN defaults).
+    public var sendByVoicePhrases: [String] = EndPhrase.defaultSendPhrases
+    /// When false (default), Send by voice only fires in safe chat apps. When true, allows other apps except email/docs.
+    public var sendByVoiceAllApps: Bool = false
     /// Leave the latest transcript on the clipboard after every dictation (default on).
     public var maximumRecordingSeconds: Double = DictationLimits.maximumRecordingSeconds
     public var recordingWarningLeadSeconds: Double = DictationLimits.warningLeadSeconds
@@ -112,11 +194,19 @@ public struct EngineConfiguration: Sendable {
                                            .key(keyCode: 79, modifiers: 0, mode: .english)],
                 soundsEnabled: Bool = true, prerollLeadSeconds: Double = 0.1, prerollMaxSeconds: Double = 1.0,
                 useRecentContext: Bool = true, useScreenContext: Bool = false, localDictationEnabled: Bool = false,
+                autoEnterModes: Set<DictationMode> = [], autoEnterExtraBundleIDs: Set<String> = [],
+                sendByVoiceEnabled: Bool = true, sendByVoicePhrases: [String] = EndPhrase.defaultSendPhrases,
+                sendByVoiceAllApps: Bool = false,
                 keepTranscriptOnClipboard: Bool = true) {
         self.apiBaseURL = apiBaseURL; self.triggers = triggers; self.soundsEnabled = soundsEnabled
         self.useRecentContext = useRecentContext
         self.useScreenContext = useScreenContext
         self.localDictationEnabled = localDictationEnabled
+        self.autoEnterModes = autoEnterModes
+        self.autoEnterExtraBundleIDs = autoEnterExtraBundleIDs
+        self.sendByVoiceEnabled = sendByVoiceEnabled
+        self.sendByVoicePhrases = sendByVoicePhrases
+        self.sendByVoiceAllApps = sendByVoiceAllApps
         self.keepTranscriptOnClipboard = keepTranscriptOnClipboard
         self.prerollLeadSeconds = prerollLeadSeconds; self.prerollMaxSeconds = prerollMaxSeconds
     }
@@ -175,8 +265,14 @@ public protocol DictationEngineProtocol: AnyObject {
     func updateScreenContextEnabled(_ enabled: Bool)
     /// Switch between Free Local Mode (on-device WhisperKit, zero APIs) and Cloud Fast Path.
     func updateLocalDictationEnabled(_ enabled: Bool)
+    /// Update which dictation modes press Return after pasting into allowed chat apps.
+    func updateAutoEnterModes(_ modes: Set<DictationMode>, extraAllowedBundleIDs: Set<String>)
+    /// Update spoken "Send by voice" configuration (works in Free Local Mode and Pro).
+    func updateSendByVoice(enabled: Bool, phrases: [String], allowOtherApps: Bool)
     /// Pluggable on-device STT backend for Free Local Mode (WhisperKit today, MLX Qwen3-ASR future).
     var localTranscriber: LocalDictationTranscriber? { get set }
+    /// Called when a cloud turn hits 402 subscription_required and the engine falls back to local mode.
+    var onSubscriptionFallbackToLocal: (() -> Void)? { get set }
     /// Forget recent dictations and learned-correction counts (sign-out).
     func clearRecentContext()
     /// Leave each transcript on the clipboard (on) or restore the previous clipboard after a confirmed paste (off).
@@ -206,6 +302,9 @@ public struct DiagnosticEvent: Sendable {
 public extension DictationEngineProtocol {
     var onDiagnostic: ((DiagnosticEvent) -> Void)? { get { nil } set {} }
     var localTranscriber: LocalDictationTranscriber? { get { nil } set {} }
+    var onSubscriptionFallbackToLocal: (() -> Void)? { get { nil } set {} }
     func updateScreenContextEnabled(_ enabled: Bool) {}
     func updateLocalDictationEnabled(_ enabled: Bool) {}
+    func updateAutoEnterModes(_ modes: Set<DictationMode>, extraAllowedBundleIDs: Set<String>) {}
+    func updateSendByVoice(enabled: Bool, phrases: [String], allowOtherApps: Bool) {}
 }

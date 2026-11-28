@@ -41,4 +41,40 @@ final class UpdateReminderTests: XCTestCase {
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "SUScheduledCheckInterval") as? Int, 3600)
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "SUEnableAutomaticChecks") as? Bool, true)
     }
+
+    func testSparkleRelaunchDefersWhileBusyAndResumesOnceIdle() {
+        let reminder = UpdateReminder()
+        var busy = true
+        reminder.isBusy = { busy }
+        var installed = false
+
+        let postponed = reminder.shouldPostponeRelaunch(version: "0.3.31") { installed = true }
+        XCTAssertTrue(postponed, "Relaunch must postpone while recording or transcribing")
+        XCTAssertEqual(reminder.deferredRelaunchVersion, "0.3.31")
+        XCTAssertEqual(reminder.availableVersion, "0.3.31")
+        XCTAssertFalse(installed)
+        XCTAssertFalse(reminder.flushDeferredRelaunchIfIdle(), "Still busy: must not relaunch")
+        XCTAssertFalse(installed)
+
+        busy = false
+        XCTAssertTrue(reminder.flushDeferredRelaunchIfIdle(), "Once idle: postponed relaunch runs")
+        XCTAssertTrue(installed)
+        XCTAssertNil(reminder.deferredRelaunchVersion)
+        XCTAssertFalse(reminder.flushDeferredRelaunchIfIdle(), "Deferred handler runs once only")
+    }
+
+    func testRuntimeActivityMarkerWritesAndClearsCleanly() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sv-activity-\(UUID().uuidString)/runtime-activity.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        RuntimeActivityMarker.update(activeKind: "meeting_recording", url: url, pid: 12345)
+        let data = try Data(contentsOf: url)
+        let decoded = try JSONDecoder().decode(RuntimeActivityMarker.Status.self, from: data)
+        XCTAssertEqual(decoded.pid, 12345)
+        XCTAssertTrue(decoded.active)
+        XCTAssertEqual(decoded.kind, "meeting_recording")
+
+        RuntimeActivityMarker.update(activeKind: nil, url: url)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
 }

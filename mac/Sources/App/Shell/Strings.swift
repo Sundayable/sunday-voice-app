@@ -20,25 +20,56 @@ enum UILanguage {
         get { UserDefaults.standard.string(forKey: key) ?? "system" }
         set {
             UserDefaults.standard.set(newValue, forKey: key)
-            cached = nil
+            lock.lock(); cached = nil; lock.unlock()
             Task { @MainActor in
                 UILanguageObserver.shared.bump()
                 NotificationCenter.default.post(name: .uiLanguageDidChange, object: nil)
             }
         }
     }
+    private static let lock = NSLock()
     private static var cached: Bundle?
+    private static var tables: [String: [String: String]] = [:]
+
+    /// Overridable in tests so "system" (unset uiLanguage) can be verified for both macOS Korean and English.
+    static var systemPreferredLanguages: () -> [String] = { Locale.preferredLanguages }
+
+    /// "ko" or "en": the pinned choice, or the Mac's preferred language among the app's localizations.
+    static var code: String {
+        let raw: String
+        if choice == "system" {
+            raw = Bundle.preferredLocalizations(from: ["en", "ko"], forPreferences: systemPreferredLanguages()).first
+                ?? Bundle.main.preferredLocalizations.first
+                ?? "en"
+        } else {
+            raw = choice
+        }
+        return raw.hasPrefix("ko") ? "ko" : "en"
+    }
     static var bundle: Bundle {
+        lock.lock(); defer { lock.unlock() }
         if let b = cached { return b }
-        let code = choice == "system" ? (Bundle.main.preferredLocalizations.first ?? "en") : choice
         let b = Bundle.main.path(forResource: code, ofType: "lproj").flatMap(Bundle.init(path:)) ?? Bundle.main
         cached = b; return b
     }
-    static var isKorean: Bool { bundle.bundlePath.hasSuffix("ko.lproj") }
+    static var isKorean: Bool { code == "ko" }
+
+    /// The compiled String Catalog table of one language, read directly. `Bundle(path: "ko.lproj")` still
+    /// resolves through the Mac's preferred languages when the app is launched normally, so an English Mac
+    /// kept showing English after picking 한국어 (0.3.23). Reading the file avoids that lookup.
+    static func table(_ code: String) -> [String: String]? {
+        lock.lock(); defer { lock.unlock() }
+        if let t = tables[code] { return t }
+        guard let url = Bundle.main.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: code),
+              let t = NSDictionary(contentsOf: url) as? [String: String] else { return nil }
+        tables[code] = t
+        return t
+    }
 }
 
 /// Look up a String Catalog key in the chosen language; falls back to the key itself.
 func L(_ key: String, _ args: CVarArg...) -> String {
-    let format = UILanguage.bundle.localizedString(forKey: key, value: key, table: "Localizable")
+    let format = UILanguage.table(UILanguage.code)?[key]
+        ?? UILanguage.bundle.localizedString(forKey: key, value: key, table: "Localizable")
     return args.isEmpty ? format : String(format: format, arguments: args)
 }

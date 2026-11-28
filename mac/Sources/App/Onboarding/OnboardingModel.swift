@@ -1,24 +1,27 @@
 import AppKit
 import Combine
 import DictationEngine
+import LocalMeetingEngine
 
 enum OnboardingStep: Int, CaseIterable, Identifiable {
-    case signIn, permissions, mic, keys, connect, voice, tryIt, done
+    case signIn, proUpgrade, permissions, mic, keys, localModel, connect, voice, tryIt, done
     var id: Int { rawValue }
     var railKey: String {
         switch self {
         case .signIn: return "ob.step.signin"
+        case .proUpgrade: return "ob.step.pro"
         case .permissions: return "ob.step.permissions"
         case .mic: return "ob.step.mic"
         case .keys: return "ob.step.keys"
+        case .localModel: return "ob.step.localModel"
         case .connect: return "ob.step.connect"
         case .voice: return "ob.step.voice"
         case .tryIt: return "ob.step.try"
         case .done: return "ob.step.done"
         }
     }
-    /// Only sign-in and permissions can block; every other step can be skipped so setup never dead-ends.
-    var skippable: Bool { self == .mic || self == .keys || self == .connect || self == .voice || self == .tryIt }
+    /// Only sign-in, Pro upgrade, and permissions can block; every other step can be skipped so setup never dead-ends.
+    var skippable: Bool { self == .mic || self == .keys || self == .localModel || self == .connect || self == .voice || self == .tryIt }
 }
 
 /// Pure navigation rules, unit-tested.
@@ -26,17 +29,21 @@ enum OnboardingFlow {
     struct Facts: Equatable {
         var signedIn: Bool
         var needsConsent: Bool = false
+        var needsProUpgrade: Bool = false
         var permissions: PermissionState
         var micHeard: Bool
         var hasTrigger: Bool
+        var localModelReady: Bool = true
     }
 
     static func canContinue(_ step: OnboardingStep, _ f: Facts) -> Bool {
         switch step {
         case .signIn: return !f.needsConsent
+        case .proUpgrade: return !f.needsProUpgrade
         case .permissions: return f.permissions.allGranted
         case .mic: return f.micHeard
         case .keys: return f.hasTrigger
+        case .localModel: return f.localModelReady
         case .connect, .voice, .tryIt, .done: return true
         }
     }
@@ -45,6 +52,7 @@ enum OnboardingFlow {
     /// Signed-out users start directly in Free Local Mode without a login wall.
     static func resumeStep(_ f: Facts, completed: Bool) -> OnboardingStep? {
         if f.needsConsent { return .signIn }
+        if f.needsProUpgrade && !completed { return .proUpgrade }
         if !f.permissions.allGranted { return completed ? .permissions : .signIn }
         return completed ? nil : .mic
     }
@@ -57,6 +65,11 @@ final class OnboardingModel: ObservableObject {
     @Published var micLevel: Float = 0
     @Published var micHeard = false
     @Published var triggers: [TriggerKind] = Prefs.triggers
+    @Published var autoEnterBilingual: Bool = Prefs.autoEnterBilingual
+    @Published var autoEnterEnglish: Bool = Prefs.autoEnterEnglish
+    @Published var sendByVoiceEnabled: Bool = Prefs.sendByVoiceEnabled
+    @Published var sendByVoicePhrasesText: String = Prefs.sendByVoicePhrasesText
+    @Published var sendByVoiceAllApps: Bool = Prefs.sendByVoiceAllApps
     @Published var capturing = false
     @Published var captured: String?
     @Published var connections: [String: String] = ["gmail": "not_connected", "slack": "not_connected"]
@@ -76,10 +89,19 @@ final class OnboardingModel: ObservableObject {
     }
     @Published var signInError: String?
     @Published var billing: BillingSummary?
+    @Published var features: AccountFeatures?
     @Published var loadingBilling = false
     @Published var billingActionPending = false
     @Published var billingError: String?
+    @Published var localModelReady = false
+    @Published var localModelDownloading = false
+    @Published var localModelProgress: Double = 0
+    @Published var localModelError: String?
     @Published var retryVisible: Set<Permission> = []
+
+    /// Minimum free disk space required before downloading & preparing the ~660 MB Whisper model.
+    static let minimumModelDiskSpaceBytes: Int64 = 1_500_000_000
+    var diskSpaceProvider: () -> Int64? = { OnboardingModel.availableDiskSpaceBytes() }
 
     let auth: AuthService
     let api: APIClient
@@ -88,10 +110,16 @@ final class OnboardingModel: ObservableObject {
     var onFinish: (() -> Void)?
     var startEngine: (() -> Void)?
     var openWords: (() -> Void)?
+    var openHandsFreeSettings: (() -> Void)?
     var onAuthChanged: (() -> Void)?
+    var onBillingUpdated: ((BillingSummary?) -> Void)?
+    @Published var pendingProUpgradeAfterSignIn = false
+    @Published var dismissedProUpgrade = false
     private var pollTask: Task<Void, Never>?
     private var stateTimer: Timer?
     private var authObserver: AnyCancellable?
+    private var meetingsObserver: AnyCancellable?
+    private weak var meetings: MeetingCoordinator?
     var isPreview = false
     private var generation = 0
     private var connectionRevision = 0
@@ -100,22 +128,224 @@ final class OnboardingModel: ObservableObject {
     init(auth: AuthService, api: APIClient, monitor: PermissionMonitor, engine: DictationEngineProtocol) {
         self.auth = auth; self.api = api; self.monitor = monitor; self.engine = engine
         permissions = monitor.state
+        localModelReady = engine.localTranscriber?.isReady ?? false
         authObserver = auth.objectWillChange.sink { [weak self] in
             Task { @MainActor in self?.objectWillChange.send() }
         }
     }
 
+    func attachMeetings(_ coordinator: MeetingCoordinator) {
+        meetings = coordinator
+        syncLocalModelState()
+        meetingsObserver = coordinator.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in self?.syncLocalModelState() }
+        }
+    }
+
+    func syncLocalModelState() {
+        let ready = (meetings?.modelReady ?? false) || (engine.localTranscriber?.isReady ?? false)
+        localModelReady = ready
+        if let meetings {
+            localModelDownloading = meetings.phase == .preparing
+            localModelProgress = meetings.setupProgress
+        }
+        if ready { localModelError = nil }
+    }
+
+    static func availableDiskSpaceBytes(at url: URL? = nil) -> Int64? {
+        var dir = url ?? LocalDictationBridge.defaultModelsDirectory()
+        while !FileManager.default.fileExists(atPath: dir.path) {
+            let parent = dir.deletingLastPathComponent()
+            if parent.path == dir.path { break }
+            dir = parent
+        }
+        guard let values = try? dir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]) else {
+            return nil
+        }
+        if let important = values.volumeAvailableCapacityForImportantUsage, important > 0 {
+            return important
+        }
+        if let basic = values.volumeAvailableCapacity {
+            return Int64(basic)
+        }
+        return nil
+    }
+
+    func downloadLocalModel() {
+        guard !localModelDownloading else { return }
+        localModelError = nil
+        if let bytes = diskSpaceProvider(), bytes < Self.minimumModelDiskSpaceBytes {
+            let gb = String(format: "%.1f", max(0, Double(bytes) / 1_000_000_000))
+            localModelError = L("ob.localModel.lowDisk", gb)
+            return
+        }
+        guard let meetings else {
+            localModelError = L("ob.localModel.failed")
+            return
+        }
+        localModelDownloading = true
+        localModelProgress = 0
+        Task {
+            await meetings.prepareModel(presentPanel: false)
+            syncLocalModelState()
+            if !localModelReady {
+                localModelError = L("ob.localModel.failed")
+            } else {
+                localModelError = nil
+                Task { await engine.localTranscriber?.prewarm() }
+            }
+        }
+    }
+
+    /// "Start free": go on to permissions and fetch the one-time speech model meanwhile, so it is
+    /// usually ready by "Try it" instead of blocking there.
+    func startFreeLocal() {
+        next()
+        if !isPreview && effectiveLocalDictation && !localModelReady { downloadLocalModel() }
+    }
+
+    func ensureLocalModelIfNeeded() {
+        guard !isPreview, effectiveLocalDictation else { return }
+        syncLocalModelState()
+        if !localModelReady && !localModelDownloading {
+            downloadLocalModel()
+        }
+    }
+
+    func switchToFreeLocalMode() {
+        dismissedProUpgrade = true
+        // Entitled Pro/team users explicitly pin local mode; non-Pro users stay in local mode
+        // automatically so upgrading to Pro later switches them smoothly into Pro Cloud.
+        if isProEntitled { Prefs.localDictationEnabled = true }
+        engine.updateLocalDictationEnabled(true)
+        ensureLocalModelIfNeeded()
+        onAuthChanged?()
+        objectWillChange.send()
+        if step == .proUpgrade { next() }
+    }
+
+    func switchToCloudProMode() {
+        guard isProEntitled else { startProUpgradeFlow(); return }
+        Prefs.localDictationEnabled = false
+        engine.updateLocalDictationEnabled(false)
+        onAuthChanged?()
+        objectWillChange.send()
+    }
+
+    /// Closing onboarding (e.g. after canceling Pro checkout) must never leave a dead state.
+    func handleWindowClosed() {
+        guard !isProEntitled else { return }
+        dismissedProUpgrade = true
+        engine.updateLocalDictationEnabled(true)
+        ensureLocalModelIfNeeded()
+        onAuthChanged?()
+    }
+
+    /// Non-Pro users are never blocked on `.proUpgrade`: Free Local Mode works immediately.
+    var needsProUpgrade: Bool { false }
+
+    /// Optional Pro upgrade prompt during onboarding right after a non-Pro account signs in.
+    var showProUpgradeStep: Bool { auth.isSignedIn && !isProEntitled && !dismissedProUpgrade }
+
     var facts: OnboardingFlow.Facts {
         .init(signedIn: auth.isSignedIn,
               needsConsent: auth.user != nil && auth.consentRequired,
+              needsProUpgrade: needsProUpgrade,
               permissions: permissions,
               micHeard: micHeard,
-              hasTrigger: !triggers.isEmpty)
+              hasTrigger: !triggers.isEmpty,
+              localModelReady: localModelReady)
     }
     var canContinue: Bool { OnboardingFlow.canContinue(step, facts) }
-    /// Signed-out users run 100% locally by default; signed-in Pro users keep cloud mode unless they opt in.
+    /// Native Google Calendar: live for company accounts; external Pro accounts are gated by
+    /// the server `features.google_calendar` flag until Google OAuth sensitive-scope verification completes.
+    var googleCalendarAllowed: Bool {
+        guard auth.isSignedIn else { return false }
+        if !isGuest { return true }
+        return features?.google_calendar == true
+    }
+
+    var watchEnabled: Bool { features?.watch == true }
+
+    /// True for active/trialing Pro subscribers and company team accounts; false for signed-out
+    /// Free Local users and signed-in external users without an active Pro subscription.
+    var isProEntitled: Bool {
+        guard auth.user != nil else { return false }
+        if let billing { return billing.entitled }
+        return !isGuest
+    }
+
+    /// Pro-only actions (Dictate in English, Polish to English) are locked for non-entitled users.
+    var proActionsLocked: Bool { !isProEntitled }
+
+    /// Stored Pro bindings are never erased when a user is on Free; at runtime only entitled users arm them.
+    static func activeTriggers(from stored: [TriggerKind], proEntitled: Bool) -> [TriggerKind] {
+        proEntitled ? stored : stored.filter { $0.mode == .bilingual }
+    }
+
+    static func activeTidyShortcuts(from stored: [TidyShortcut], proEntitled: Bool) -> [TidyShortcut] {
+        proEntitled ? stored : []
+    }
+
+    static func activeAutoEnterModes(bilingual: Bool, english: Bool, proEntitled: Bool) -> Set<DictationMode> {
+        var modes: Set<DictationMode> = []
+        if bilingual { modes.insert(.bilingual) }
+        if english && proEntitled { modes.insert(.english) }
+        return modes
+    }
+
+    func autoEnterEnabled(for mode: DictationMode) -> Bool {
+        mode == .bilingual ? autoEnterBilingual : autoEnterEnglish
+    }
+
+    func setAutoEnter(_ enabled: Bool, for mode: DictationMode) {
+        if mode == .english && proActionsLocked { return }
+        if mode == .bilingual {
+            autoEnterBilingual = enabled
+            Prefs.autoEnterBilingual = enabled
+        } else {
+            autoEnterEnglish = enabled
+            Prefs.autoEnterEnglish = enabled
+        }
+        let activeModes = Self.activeAutoEnterModes(bilingual: autoEnterBilingual,
+                                                    english: autoEnterEnglish,
+                                                    proEntitled: isProEntitled)
+        engine.updateAutoEnterModes(activeModes, extraAllowedBundleIDs: Set(Prefs.autoEnterExtraBundleIDs))
+    }
+
+    func setSendByVoiceEnabled(_ enabled: Bool) {
+        sendByVoiceEnabled = enabled
+        Prefs.sendByVoiceEnabled = enabled
+        pushSendByVoiceToEngine()
+    }
+
+    func setSendByVoicePhrasesText(_ raw: String) {
+        sendByVoicePhrasesText = raw
+        Prefs.sendByVoicePhrasesText = raw
+        pushSendByVoiceToEngine()
+    }
+
+    func resetSendByVoicePhrases() {
+        setSendByVoicePhrasesText(EndPhrase.defaultSendPhrasesText)
+    }
+
+    func setSendByVoiceAllApps(_ allow: Bool) {
+        sendByVoiceAllApps = allow
+        Prefs.sendByVoiceAllApps = allow
+        pushSendByVoiceToEngine()
+    }
+
+    func pushSendByVoiceToEngine() {
+        engine.updateSendByVoice(
+            enabled: sendByVoiceEnabled,
+            phrases: EndPhrase.parsePhrases(sendByVoicePhrasesText),
+            allowOtherApps: sendByVoiceAllApps
+        )
+    }
+
+    /// Free Local Mode is active whenever signed out, not entitled to Pro, or explicitly chosen.
     var isLocalOnly: Bool { auth.user == nil }
-    var effectiveLocalDictation: Bool { auth.user == nil || Prefs.localDictationEnabled }
+    var effectiveLocalDictation: Bool { auth.user == nil || !isProEntitled || Prefs.localDictationEnabled }
 
     // MARK: lifecycle
 
@@ -150,7 +380,8 @@ final class OnboardingModel: ObservableObject {
         connections = ["gmail": "not_connected", "slack": "not_connected"]
         disconnecting = []
         connectionError = nil; voiceError = nil; signInError = nil
-        billing = nil; billingError = nil; loadingBilling = false; billingActionPending = false
+        billing = nil; features = nil; billingError = nil; loadingBilling = false; billingActionPending = false
+        pendingProUpgradeAfterSignIn = false; dismissedProUpgrade = false
         tryText = ""; micHeard = false; buildingVoice = false
         Prefs.onboardingCompleted = false
         begin()
@@ -158,9 +389,25 @@ final class OnboardingModel: ObservableObject {
 
     func didSignIn() {
         guard auth.isSignedIn else { return }
+        let continueToPro = pendingProUpgradeAfterSignIn
+        pendingProUpgradeAfterSignIn = false
+        dismissedProUpgrade = false
         onAuthChanged?()
-        Task { await loadBilling() }
         if step == .signIn { next() }
+        Task {
+            await loadBilling()
+            if self.isProEntitled {
+                if self.step == .proUpgrade { self.next() }
+            } else {
+                // Keep non-Pro users working immediately in Free Local Mode even before/without checkout.
+                self.engine.updateLocalDictationEnabled(true)
+                self.ensureLocalModelIfNeeded()
+                self.onAuthChanged?()
+                if continueToPro {
+                    self.startProUpgradeFlow()
+                }
+            }
+        }
         if permissions.allGranted { startEngine?() }
     }
 
@@ -180,14 +427,33 @@ final class OnboardingModel: ObservableObject {
     /// Guests have no Gmail/Slack connections; signed-out local users skip cloud-only connect and voice steps.
     var isGuest: Bool { auth.user?.guest == true }
     var hidesCloudSteps: Bool { isGuest || isLocalOnly }
-    private var steps: [OnboardingStep] { OnboardingStep.allCases.filter { !hidesCloudSteps || ($0 != .connect && $0 != .voice) } }
+    var visibleSteps: [OnboardingStep] {
+        OnboardingStep.allCases.filter { s in
+            if s == .proUpgrade { return showProUpgradeStep || step == .proUpgrade }
+            if s == .localModel { return effectiveLocalDictation }
+            if hidesCloudSteps && (s == .connect || s == .voice) { return false }
+            return true
+        }
+    }
+    private var steps: [OnboardingStep] { visibleSteps }
 
     func next() {
         let steps = self.steps
+        if !isPreview {
+            AnonymousStats.shared.recordOnboardingStep(step, localMode: effectiveLocalDictation)
+        }
         guard let i = steps.firstIndex(of: step) ?? OnboardingStep.allCases.firstIndex(of: step).map({ min($0, steps.count - 1) }),
               i + 1 < steps.count else { finish(); return }
         leave(step)
         step = steps[i + 1]
+        enter(step)
+    }
+
+    /// Jump to a visible step (e.g. "Try it" → key setup when the key does nothing).
+    func go(to target: OnboardingStep) {
+        guard target != step, steps.contains(target) else { return }
+        leave(step)
+        step = target
         enter(step)
     }
 
@@ -200,6 +466,9 @@ final class OnboardingModel: ObservableObject {
     }
 
     func finish() {
+        if !isPreview {
+            AnonymousStats.shared.recordOnboardingStep(.done, localMode: effectiveLocalDictation)
+        }
         leave(step)
         end()
         Prefs.onboardingCompleted = true
@@ -208,7 +477,16 @@ final class OnboardingModel: ObservableObject {
 
     private func enter(_ s: OnboardingStep) {
         switch s {
+        case .proUpgrade: Task {
+            await loadBilling()
+            if self.isProEntitled {
+                if self.step == .proUpgrade { self.next() }
+            } else {
+                self.ensureLocalModelIfNeeded()
+            }
+        }
         case .mic: startMicCheck()
+        case .localModel, .tryIt: syncLocalModelState()
         case .connect, .voice: Task {
             await loadVoice()
             if connections.values.contains("pending") { pollConnections() }
@@ -233,9 +511,14 @@ final class OnboardingModel: ObservableObject {
                 NSApp.activate(ignoringOtherApps: true)
                 NSApp.windows.filter { $0.isVisible && $0.canBecomeKey }.forEach { $0.makeKeyAndOrderFront(nil) }
             } catch AuthError.cancelled {
+                pendingProUpgradeAfterSignIn = false
             } catch AuthError.server(let code) where code == "not_invited" {
+                pendingProUpgradeAfterSignIn = false
                 signInError = L("error.notInvited")
-            } catch { signInError = L("error.signInRetry") }
+            } catch {
+                pendingProUpgradeAfterSignIn = false
+                signInError = L("error.signInRetry")
+            }
         }
     }
 
@@ -257,63 +540,71 @@ final class OnboardingModel: ObservableObject {
 
     @Published var capturingMode: DictationMode?
     @Published var keyMessage: String?
+    /// Live confirmation after capturing a shortcut ("이제 마우스 옆 버튼 누르고 말하면 돼요.").
+    @Published var capturedConfirmation: String?
+    /// The key being replaced by the running capture (nil = adding an extra key).
+    @Published var capturingReplacement: TriggerKind?
+    /// A captured key another action already uses, waiting for "Move it" / "Cancel".
+    @Published var pendingMove: PendingKeyMove?
+    /// Live "hold your key now" check on the key step.
+    @Published var keyTest = KeyTestState()
+    /// macOS "Press 🌐 key to" setting; anything but Do Nothing fights a 🌐 Fn dictation key.
+    @Published var fnUsage: FnKeyUsage = FnKeySetting.current()
+    @Published var confirmingReset = false
+    var captureToken = 0
+    /// Set while the onboarding key step is on screen: the live check re-arms after every change.
+    var keyTestAuto = false
+    var keyTestToken = 0
 
     func triggers(for mode: DictationMode) -> [TriggerKind] { triggers.filter { $0.mode == mode } }
 
     func removeTrigger(_ trigger: TriggerKind) {
+        if trigger.mode == .english && proActionsLocked { return }
         triggers.removeAll { $0 == trigger }
         saveTriggers()
     }
 
     func resetTriggers() {
-        triggers = Prefs.defaultTriggers; saveTriggers()
-        tidyKeys = [.default]; saveTidyKeys()
-    }
-
-    private func saveTriggers() {
-        Prefs.triggers = triggers
-        engine.updateTriggers(triggers)
-        keyMessage = nil
-    }
-
-    /// "Click, then press any key, key combo or mouse button."
-    func captureKey(for mode: DictationMode) {
-        capturing = true; capturingMode = mode; captured = nil; keyMessage = nil
-        engine.captureNextTrigger(timeout: 10) { [weak self] trigger in
-            guard let self else { return }
-            self.capturing = false; self.capturingMode = nil
-            guard let raw = trigger else { return }
-            let trigger = raw.with(mode: mode)
-            if let problem = Self.problem(with: trigger) { self.keyMessage = problem; return }
-            if let key = TidyShortcut(trigger: trigger), self.tidyKeys.contains(key) {
-                self.keyMessage = L("ob.keys.usedForTidy", Self.describe(trigger)); return
-            }
-            if let clash = self.triggers.first(where: { $0.inputKey == trigger.inputKey }) {
-                if clash.mode == mode { self.keyMessage = L("ob.keys.already", Self.describe(trigger)); return }
-                self.triggers.removeAll { $0 == clash } // moving it to the other mode
-            }
-            self.triggers.append(trigger)
-            self.captured = Self.describe(trigger)
-            self.saveTriggers()
+        cancelCapture()
+        if proActionsLocked {
+            // Preserve any stored Pro (.english / tidy) bindings untouched; only reset Free bilingual triggers.
+            let storedPro = triggers.filter { $0.mode != .bilingual }
+            triggers = Prefs.defaultTriggers.filter { $0.mode == .bilingual } + storedPro
+            saveTriggers()
+        } else {
+            triggers = Prefs.defaultTriggers; saveTriggers()
+            tidyKeys = [.default]; saveTidyKeys()
         }
+        confirmingReset = false; pendingMove = nil
+        captured = nil; capturedConfirmation = nil
+    }
+
+    func saveTriggers() {
+        Prefs.triggers = triggers
+        engine.updateTriggers(Self.activeTriggers(from: triggers, proEntitled: isProEntitled))
+        keyMessage = nil
     }
 
     // MARK: tidy clipboard keys (third card; one setting shared by onboarding and Settings › Keys)
 
     @Published var tidyKeys: [TidyShortcut] = Prefs.tidyShortcuts
     @Published var capturingTidy = false
+    /// Polish capture from the card ("Change") vs. the advanced section ("+ Add").
+    @Published var tidyCaptureReplacesPrimary = false
     /// Registers the keys system-wide; returns the ones another app owns. Set by the app delegate.
     var applyTidyKeys: ([TidyShortcut]) -> [TidyShortcut] = { _ in [] }
 
     func removeTidyKey(_ key: TidyShortcut) {
+        if proActionsLocked { return }
         tidyKeys.removeAll { $0 == key }
         saveTidyKeys()
     }
 
     /// Saves and registers; a key another app already owns is dropped with a message.
-    private func saveTidyKeys() {
-        let taken = applyTidyKeys(tidyKeys)
-        if !taken.isEmpty {
+    func saveTidyKeys() {
+        let active = Self.activeTidyShortcuts(from: tidyKeys, proEntitled: isProEntitled)
+        let taken = applyTidyKeys(active)
+        if !taken.isEmpty && isProEntitled {
             tidyKeys.removeAll { taken.contains($0) }
             _ = applyTidyKeys(tidyKeys)
             keyMessage = L("settings.tidy.taken")
@@ -323,26 +614,9 @@ final class OnboardingModel: ObservableObject {
         Prefs.tidyShortcuts = tidyKeys
     }
 
-    /// Press to tidy: keys and key combos only (system hot keys); mouse buttons and holds belong to dictation.
-    func captureTidyKey() {
-        capturing = true; capturingTidy = true; captured = nil; keyMessage = nil
-        _ = applyTidyKeys([]) // the current tidy keys must reach the recorder, not start a tidy
-        engine.captureNextTrigger(timeout: 10) { [weak self] raw in
-            guard let self else { return }
-            self.capturing = false; self.capturingTidy = false
-            _ = self.applyTidyKeys(self.tidyKeys)
-            guard let raw else { return }
-            self.keyMessage = Self.tidyProblem(raw, tidyKeys: self.tidyKeys, triggers: self.triggers)
-            guard self.keyMessage == nil, let key = TidyShortcut(trigger: raw) else { return }
-            self.tidyKeys.append(key)
-            self.captured = Self.describe(raw)
-            self.saveTidyKeys()
-        }
-    }
-
     /// Why a captured input can't be a tidy key, or nil.
     static func tidyProblem(_ raw: TriggerKind, tidyKeys: [TidyShortcut], triggers: [TriggerKind]) -> String? {
-        guard let key = TidyShortcut(trigger: raw) else { return L("ob.keys.tidyKeysOnly") }
+        guard let key = TidyShortcut(trigger: raw) else { return L("keys.polishKeysOnly") }
         if key.needsModifier { return L("settings.tidy.needsModifier") }
         if tidyKeys.contains(key) { return L("ob.keys.already", describe(raw)) }
         if key == .copyLatest { return L("settings.tidy.conflict") }
@@ -352,10 +626,34 @@ final class OnboardingModel: ObservableObject {
 
     static func describe(_ t: TriggerKind) -> String {
         switch t {
-        case .controlHold: return "⌃ Control"
+        case .controlHold: return KeyNames.modifier(.control)
         case .modifierHold(let keys, _, _): return keys.map(KeyNames.modifier).joined(separator: " + ")
-        case .mouseButton(let n, _): return L("ob.keys.mouseButton", "\(n + 1)")
-        case .key(let code, let mods, _): return KeyNames.modifierPrefix(mods) + KeyNames.name(code)
+        case .mouseButton(let n, _): return KeyNames.mouseButton(n)
+        case .key(let code, let mods, _):
+            let prefix = KeyNames.modifierPrefix(mods)
+            return prefix.isEmpty ? KeyNames.name(code) : prefix + " + " + KeyNames.name(code)
+        }
+    }
+
+    /// Plain-word physical location hint so users know where keys like Option (Alt) or Fn sit on the keyboard.
+    static func locationHint(_ t: TriggerKind) -> String? {
+        switch t {
+        case .controlHold: return L("keyname.control.where")
+        case .modifierHold(let keys, _, _):
+            if keys.contains(.rightOption) { return L("keyname.rightOption.where") }
+            if keys.contains(.option) { return L("keyname.option.where") }
+            if keys.contains(.rightCommand) { return L("keyname.rightCommand.where") }
+            if keys.contains(.command) { return L("keyname.command.where") }
+            if keys.contains(.fn) { return L("keyname.fn.where") }
+            if keys.contains(.control) { return L("keyname.control.where") }
+            return nil
+        case .key(_, let mods, _):
+            if mods & 0x0800 != 0 { return L("keyname.option.where") }
+            if mods & 0x0100 != 0 { return L("keyname.command.where") }
+            if mods & 0x1000 != 0 { return L("keyname.control.where") }
+            return nil
+        case .mouseButton:
+            return nil
         }
     }
 
@@ -368,10 +666,10 @@ final class OnboardingModel: ObservableObject {
         switch trigger {
         case .key(let code, let mods, _):
             let typing: Set<UInt16> = Set(0...50).union([65, 67, 69, 75, 78, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92]).subtracting([48, 49])
-            if mods == 0 && (typing.contains(code) || code == 36 || code == 48 || code == 49 || code == 51 || code == 53) { return L("ob.keys.typingKey") }
+            if mods == 0 && (typing.contains(code) || code == 36 || code == 48 || code == 49 || code == 51 || code == 53) { return L("keys.typingKey") }
             return nil
         case .modifierHold(let keys, _, _) where keys == [.shift] || keys == [.command]:
-            return L("ob.keys.typingKey")
+            return L("keys.typingKey")
         default: return nil
         }
     }
@@ -470,9 +768,29 @@ final class OnboardingModel: ObservableObject {
         do {
             let summary = try await api.me()
             billing = summary.billing
+            features = summary.features
             billingError = nil
+            onBillingUpdated?(summary.billing)
         } catch {
             // Keep prior billing state if a background refresh fails transiently.
+        }
+    }
+
+    /// Entry point for the "Start Pro ($19/mo)" button on locked Pro cards (Keys / onboarding).
+    /// Signed-out users go through Google sign-in first, then continue directly into checkout if not entitled.
+    func startProUpgradeFlow() {
+        if auth.user == nil {
+            guard !auth.signingIn else { return }
+            pendingProUpgradeAfterSignIn = true
+            signIn()
+            return
+        }
+        let status = billing?.status ?? "none"
+        let isPastDue = status == "past_due" || status == "unpaid"
+        if isPastDue && billing?.has_customer == true {
+            manageSubscription()
+        } else {
+            upgradeToPro()
         }
     }
 
@@ -517,7 +835,15 @@ final class OnboardingModel: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         Task {
             await loadBilling()
-            onAuthChanged?()
+            if self.isProEntitled {
+                Prefs.localDictationEnabled = false
+                self.engine.updateLocalDictationEnabled(false)
+                self.onAuthChanged?()
+                if self.step == .proUpgrade { self.next() }
+            } else {
+                // Checkout cancelled or unpaid: immediately return to working Free Local Mode.
+                self.switchToFreeLocalMode()
+            }
         }
     }
 
@@ -548,6 +874,21 @@ final class OnboardingModel: ObservableObject {
                 guard current == generation else { return }
                 savedCards[lang] = card.text; voiceError = nil
             } catch { if current == generation { voiceError = L("error.voiceSave") } }
+        }
+    }
+
+    func deleteCard(_ lang: String) {
+        let current = generation
+        Task {
+            do {
+                try await api.deleteCard(lang)
+                guard current == generation else { return }
+                cards[lang] = nil
+                savedCards[lang] = nil
+                voiceError = nil
+            } catch {
+                if current == generation { voiceError = L("voice.delete.error") }
+            }
         }
     }
 
@@ -584,22 +925,30 @@ struct MicCheckDetector {
 enum KeyNames {
     static func modifier(_ k: ModifierKey) -> String {
         switch k {
-        case .fn: return "🌐 Fn"
-        case .control: return "⌃ Control"
-        case .option: return "⌥ Option"
-        case .command: return "⌘ Command"
-        case .shift: return "⇧ Shift"
-        case .rightOption: return "Right ⌥ Option"
-        case .rightCommand: return "Right ⌘ Command"
+        case .fn: return L("keyname.fn")
+        case .control: return L("keyname.control")
+        case .option: return L("keyname.option")
+        case .command: return L("keyname.command")
+        case .shift: return L("keyname.shift")
+        case .rightOption: return L("keyname.rightOption")
+        case .rightCommand: return L("keyname.rightCommand")
+        }
+    }
+    static func mouseButton(_ number: Int) -> String {
+        switch number {
+        case 2: return L("keyname.mouseMiddle")
+        case 3: return L("keyname.mouseSide1")
+        case 4: return L("keyname.mouseSide2")
+        default: return L("keys.mouseButton", "\(number + 1)")
         }
     }
     static func modifierPrefix(_ carbon: UInt32) -> String {
-        var s = ""
-        if carbon & 0x1000 != 0 { s += "⌃" }
-        if carbon & 0x0800 != 0 { s += "⌥" }
-        if carbon & 0x0200 != 0 { s += "⇧" }
-        if carbon & 0x0100 != 0 { s += "⌘" }
-        return s
+        var parts: [String] = []
+        if carbon & 0x1000 != 0 { parts.append(L("keyname.control")) }
+        if carbon & 0x0800 != 0 { parts.append(L("keyname.option")) }
+        if carbon & 0x0200 != 0 { parts.append(L("keyname.shift")) }
+        if carbon & 0x0100 != 0 { parts.append(L("keyname.command")) }
+        return parts.joined(separator: " + ")
     }
     static func name(_ code: UInt16) -> String {
         let table: [UInt16: String] = [79: "F18", 80: "F19", 64: "F17", 106: "F16", 113: "F15", 107: "F14", 105: "F13",
@@ -665,5 +1014,54 @@ enum Prefs {
     static var localDictationEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "localDictationEnabled") as? Bool ?? false }
         set { UserDefaults.standard.set(newValue, forKey: "localDictationEnabled") }
+    }
+
+    /// Local opt-in flags for upcoming Pro features ("Notify me when ready").
+    static var notifyAppleWatch: Bool {
+        get { UserDefaults.standard.bool(forKey: "notifyAppleWatch") }
+        set { UserDefaults.standard.set(newValue, forKey: "notifyAppleWatch") }
+    }
+
+    static var notifyPersonalMCP: Bool {
+        get { UserDefaults.standard.bool(forKey: "notifyPersonalMCP") }
+        set { UserDefaults.standard.set(newValue, forKey: "notifyPersonalMCP") }
+    }
+
+    /// Optional per-action "Press Enter after pasting" (default OFF). Applies only in safe chat apps.
+    static var autoEnterBilingual: Bool {
+        get { UserDefaults.standard.bool(forKey: "autoEnterBilingual") }
+        set { UserDefaults.standard.set(newValue, forKey: "autoEnterBilingual") }
+    }
+
+    static var autoEnterEnglish: Bool {
+        get { UserDefaults.standard.bool(forKey: "autoEnterEnglish") }
+        set { UserDefaults.standard.set(newValue, forKey: "autoEnterEnglish") }
+    }
+
+    /// Optional extra chat-app bundle IDs allowed for auto-Enter (email/doc blocklist still applies).
+    static var autoEnterExtraBundleIDs: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "autoEnterExtraBundleIDs") ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: "autoEnterExtraBundleIDs") }
+    }
+
+    /// Spoken "Send by voice" end command (default ON; triggers only on exact final command phrase).
+    static var sendByVoiceEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "sendByVoiceEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "sendByVoiceEnabled") }
+    }
+
+    static var sendByVoicePhrasesText: String {
+        get { UserDefaults.standard.string(forKey: "sendByVoicePhrasesText") ?? EndPhrase.defaultSendPhrasesText }
+        set { UserDefaults.standard.set(newValue, forKey: "sendByVoicePhrasesText") }
+    }
+
+    static var sendByVoicePhrases: [String] {
+        EndPhrase.parsePhrases(sendByVoicePhrasesText)
+    }
+
+    /// When false (default), Send by voice only runs in safe chat apps. When true, allows other non-email/doc apps.
+    static var sendByVoiceAllApps: Bool {
+        get { UserDefaults.standard.bool(forKey: "sendByVoiceAllApps") }
+        set { UserDefaults.standard.set(newValue, forKey: "sendByVoiceAllApps") }
     }
 }

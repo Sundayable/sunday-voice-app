@@ -39,9 +39,17 @@ struct BillingSummary: Codable, Equatable {
     var checkout_available: Bool
 }
 
+struct AccountFeatures: Codable, Equatable {
+    var connections: Bool?
+    var cloud: Bool?
+    var google_calendar: Bool?
+    var watch: Bool?
+}
+
 struct AccountSummary: Codable, Equatable {
     var plan: String
     var billing: BillingSummary?
+    var features: AccountFeatures?
 }
 
 /// JSON endpoints the app shell uses (the engine has its own client for the hot path).
@@ -114,6 +122,7 @@ final class APIClient: WatchRecordingCalendarAPI {
     func disconnect(_ toolkit: String) async throws { _ = try await call("DELETE", "api/connections/\(toolkit)", as: OK.self) }
     func refreshVoice() async throws -> VoiceRefresh { try await call("POST", "api/voice/refresh", as: VoiceRefresh.self) }
     func saveCard(_ lang: String, _ text: String) async throws -> VoiceCard { try await call("PUT", "api/voice/\(lang)", body: ["text": text], as: CardResponse.self).card }
+    func deleteCard(_ lang: String) async throws { _ = try await call("DELETE", "api/voice/\(lang)", as: OK.self) }
     func vocab() async throws -> VocabList { try await call("GET", "api/vocab", as: VocabList.self) }
     func editVocab(add: [String] = [], remove: [String] = [], enable: [String] = [], disable: [String] = []) async throws {
         _ = try await call("PATCH", "api/vocab", body: ["add": add, "remove": remove, "enable": enable, "disable": disable], as: OK.self)

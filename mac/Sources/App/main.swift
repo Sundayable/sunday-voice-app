@@ -7,7 +7,7 @@ import ServiceManagement
 import DictationEngine
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     lazy var auth = AuthService()
     lazy var api = APIClient(auth: auth)
     lazy var diagnostics = Diagnostics(auth: auth, api: api)
@@ -52,6 +52,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let info = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     let header = MenuHeaderModel()
     var lastLevel: Float = 0
+    private var billingEntitledOverride: Bool?
+
+    /// True for company team accounts and paying Pro subscribers; false for signed-out or free accounts.
+    var isProEntitled: Bool {
+        guard auth.user != nil else { return false }
+        if let billingEntitledOverride { return billingEntitledOverride }
+        return auth.user?.guest != true
+    }
+
+    private func syncActiveShortcuts() {
+        engine.updateTriggers(OnboardingModel.activeTriggers(from: Prefs.triggers, proEntitled: isProEntitled))
+        engine.updateAutoEnterModes(
+            OnboardingModel.activeAutoEnterModes(bilingual: Prefs.autoEnterBilingual,
+                                                 english: Prefs.autoEnterEnglish,
+                                                 proEntitled: isProEntitled),
+            extraAllowedBundleIDs: Set(Prefs.autoEnterExtraBundleIDs)
+        )
+        _ = applyTidyKeys(OnboardingModel.activeTidyShortcuts(from: Prefs.tidyShortcuts, proEntitled: isProEntitled))
+    }
+
+    private func ensureLocalModelDownloadingIfNeeded() {
+        guard effectiveLocalDictation, !meetings.modelReady, meetings.phase != .preparing else { return }
+        Task { [weak self] in
+            await self?.meetings.prepareModel(presentPanel: false)
+            self?.buildMenu()
+            self?.render(self?.engine.state ?? .idle)
+        }
+    }
+
+    private func applyBillingUpdate(_ billing: BillingSummary?) {
+        billingEntitledOverride = billing?.entitled
+        engine.updateLocalDictationEnabled(effectiveLocalDictation)
+        syncActiveShortcuts()
+        if !isProEntitled { ensureLocalModelDownloadingIfNeeded() }
+        buildMenu()
+        render(engine.state)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let win = notification.object as? NSWindow, win === onboardingWindow {
+            onboarding?.handleWindowClosed()
+            if PermissionMonitor.read(previous: nil).allGranted { startEngine() }
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Theme.registerFonts()
@@ -97,12 +141,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         transcriptionObserver = meetings.$transcription.receive(on: DispatchQueue.main).sink { [weak self] _ in
             guard let self else { return }
             self.updateMeetingMenuStatus()
+            self.syncRuntimeActivityAndUpdates()
             self.render(self.engine.state)
         }
         meetings.startMonitoring()
         engine.localTranscriber = LocalDictationBridge()
-        engine.onStateChange = { [weak self] state in self?.render(state) }
+        engine.onStateChange = { [weak self] state in
+            self?.render(state)
+            self?.syncRuntimeActivityAndUpdates()
+        }
+        engine.onSubscriptionFallbackToLocal = { [weak self] in
+            guard let self else { return }
+            self.billingEntitledOverride = false
+            self.syncActiveShortcuts()
+            self.buildMenu()
+            self.render(self.engine.state)
+        }
         _ = wake // installs the hands-free audio tap before any wake URL arrives
+        HandsFreeCursorBridge.shared.onTrigger = { [weak self] source in
+            guard let self, !self.meetingCaptureActive, !self.endingSession else { return }
+            self.wake?.startAtCurrentCursor(source: source)
+        }
+        AnonymousStats.shared.recordFirstLaunchIfNeeded(localMode: effectiveLocalDictation)
         engine.onRecordingNotice = { [weak self] notice in
             let text: String?
             switch notice {
@@ -111,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .retrying: text = L("dictation.retrying")
             case .saveFailed: text = L("dictation.saveFailed")
             case .recoveryAvailable: text = L("dictation.audioSaved")
+            case .recoveredHeld: text = L("dictation.recoveredHeld")
             case nil: text = nil
             }
             self?.hud.setRecordingNotice(text)
@@ -120,11 +181,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hud.onPaste = { [weak self] in self?.engine.pasteLastResult() }
         hud.onDiscard = { [weak self] in self?.hud.show(.hidden) }
         engine.onDelivery = { [weak self] record in
+            if let self, !record.isDiagnostic {
+                AnonymousStats.shared.recordDictation(localMode: self.effectiveLocalDictation)
+            }
             self?.diagnostics.delivery(record)
             return self?.recentTranscripts.record(record) ?? false
         }
         auth.onDiagnosticError = { [weak self] code in self?.diagnostics.event(DiagnosticEvent("client_error", errorCode: code)) }
-        engine.onDiagnostic = { [weak self] in self?.diagnostics.event($0) }
+        engine.onDiagnostic = { [weak self] event in
+            if let self, event.name == "dictation_fail" {
+                AnonymousStats.shared.recordError(event.errorCode, localMode: self.effectiveLocalDictation)
+            }
+            self?.diagnostics.event(event)
+        }
         consentObserver = auth.$consentRequired.removeDuplicates().dropFirst().sink { [weak self] required in
             Task { @MainActor in
                 guard let self else { return }
@@ -168,7 +237,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         installCopyLatestHotkey()
         hud.onUndo = { [weak self] in self?.clipboardTidy.undo() }
-        applyTidyKeys(Prefs.tidyShortcuts)
+        applyTidyKeys(OnboardingModel.activeTidyShortcuts(from: Prefs.tidyShortcuts, proEntitled: isProEntitled))
+        if auth.isSignedIn && auth.user?.guest == true {
+            Task { [weak self] in
+                guard let self, let summary = try? await self.api.me() else { return }
+                self.applyBillingUpdate(summary.billing)
+            }
+        }
         engine.insertIntoOwnWindow = { [weak self] text in self?.insertIntoOwnWindow(text) ?? false }
         hud.onAction = { [weak self] action in
             switch action {
@@ -179,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .microphoneSettings: NSWorkspace.shared.open(SettingsLink.url(.microphone))
             case .accessibilitySettings: NSWorkspace.shared.open(SettingsLink.url(.accessibility))
             case .openAccount: self?.openAccountSettings()
+            case .openLocalModel: self?.openLocalModelSetup()
             default: break
             }
         }
@@ -235,8 +311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Signed-out users start in Free Local Mode by default; signed-in Pro users keep cloud mode unless they opt in.
-    var effectiveLocalDictation: Bool { auth.user == nil || Prefs.localDictationEnabled }
+    /// Free Local Mode is active whenever signed out, not entitled to Pro, or explicitly chosen.
+    var effectiveLocalDictation: Bool { auth.user == nil || !isProEntitled || Prefs.localDictationEnabled }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if Prefs.onboardingCompleted && !(auth.user != nil && auth.consentRequired) { openSettings() } else { showOnboarding() }
@@ -261,10 +337,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let local = effectiveLocalDictation
         guard auth.isSignedIn || (auth.user == nil && local) else { return }
         guard let base = AppIdentity.apiBaseURL ?? (local ? URL(string: "https://localhost") : nil) else { return }
-        let config = EngineConfiguration(apiBaseURL: base, triggers: Prefs.triggers, soundsEnabled: Prefs.soundsEnabled,
+        let activeTriggers = OnboardingModel.activeTriggers(from: Prefs.triggers, proEntitled: isProEntitled)
+        let activeAutoEnter = OnboardingModel.activeAutoEnterModes(bilingual: Prefs.autoEnterBilingual,
+                                                                   english: Prefs.autoEnterEnglish,
+                                                                   proEntitled: isProEntitled)
+        let config = EngineConfiguration(apiBaseURL: base, triggers: activeTriggers, soundsEnabled: Prefs.soundsEnabled,
                                          useRecentContext: Prefs.useRecentContext,
                                          useScreenContext: Prefs.useScreenContext,
                                          localDictationEnabled: local,
+                                         autoEnterModes: activeAutoEnter,
+                                         autoEnterExtraBundleIDs: Set(Prefs.autoEnterExtraBundleIDs),
+                                         sendByVoiceEnabled: Prefs.sendByVoiceEnabled,
+                                         sendByVoicePhrases: Prefs.sendByVoicePhrases,
+                                         sendByVoiceAllApps: Prefs.sendByVoiceAllApps,
                                          keepTranscriptOnClipboard: Prefs.keepTranscriptOnClipboard)
         do { try engine.start(configuration: config, tokens: auth) } catch EngineError.inputMonitoringMissing {
             monitor.markInputMonitoringNeeded(); showOnboarding()
@@ -272,7 +357,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func handleAuthChanged() {
+        if auth.user == nil { billingEntitledOverride = nil }
         buildMenu()
+        syncActiveShortcuts()
         if PermissionMonitor.read(previous: nil).allGranted { startEngine() }
         render(engine.state)
     }
@@ -297,8 +384,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             title = UILanguage.isKorean
                 ? "미팅 전사 중 · \(summary.etaLabel)"
                 : "Transcribing meeting · \(summary.etaLabel)"
-        } else if case .idle = state, effectiveLocalDictation {
-            title = UILanguage.isKorean ? "\(L("menu.ready")) · 로컬 모드" : "\(L("menu.ready")) · Local"
+        } else if case .idle = state {
+            title = effectiveLocalDictation ? L("mode.status.freeLocal") : L("mode.status.proCloud")
         }
         info.title = title
         header.state = title
@@ -328,8 +415,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .quotaExceeded: return L("error.quota")
         case .server("audio_saved"): return L("dictation.audioSaved")
         case .server("audio_partial_saved"): return L("dictation.partialSaved")
+        case .server("interrupted_saved"): return L("dictation.interruptedSaved")
+        case .server("local_empty_saved"): return L("dictation.localEmptySaved")
         case .server("local_storage_unavailable"): return L("dictation.storageUnavailable")
         case .server("local_model_missing"): return L("dictation.localModelMissing")
+        case .server("subscription_required_local_missing"): return L("hud.error.subscriptionLocalMissing")
         case .server("subscription_required"), .server("STT_subscription_required"): return L("error.subscriptionRequired")
         case .server(let code) where code == "secure_field": return L("error.password")
         default: return L("error.couldNotFinish", "\(e)")
@@ -337,8 +427,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     static func action(_ e: EngineError) -> HUDAction {
         switch e {
-        case .server("audio_saved"), .server("audio_partial_saved"): return .retryTranscription
+        case .server("audio_saved"), .server("audio_partial_saved"), .server("interrupted_saved"), .server("local_empty_saved"): return .retryTranscription
+        case .server("subscription_required_local_missing"): return .downloadLocalOrUpgrade
         case .server("subscription_required"), .server("STT_subscription_required"): return .openAccount
+        case .server("local_model_missing"): return .openLocalModel
         case .microphoneDenied: return .microphoneSettings
         case .accessibilityMissing, .inputMonitoringMissing: return .accessibilitySettings
         default: return .close
@@ -348,7 +440,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: menu
 
     func buildMenu() {
-        let menu = NSMenu(); menu.autoenablesItems = false
+        // Reuse the existing NSMenu and detach retained items before re-adding. Creating a new NSMenu
+        // while `updateItem`/`tidyItem`/`meetingItem`/`wakeItem` still belonged to the previous menu
+        // threw NSInternalInconsistencyException inside Task { @MainActor }, corrupting the main
+        // thread's Swift Concurrency executor TLS and crashing later SwiftUI MainActor.assumeIsolated calls.
+        let menu = status?.menu ?? NSMenu()
+        menu.removeAllItems()
+        for retained in [updateItem, tidyItem, meetingItem, wakeItem] {
+            retained.menu?.removeItem(retained)
+        }
+        menu.autoenablesItems = false
         let headerItem = NSMenuItem(); headerItem.isEnabled = false
         let host = NSHostingView(rootView: MenuHeader(model: header)); host.frame.size = host.fittingSize
         headerItem.view = host
@@ -358,6 +459,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateItem.isHidden = updateReminder.availableVersion == nil
         if let v = updateReminder.availableVersion { updateItem.title = L("menu.updateAvailable", v); MenuStyle.apply(updateItem) }
         menu.addItem(updateItem)
+        // One-obvious dictation mode / upgrade control right at the top of the menu.
+        if isProEntitled {
+            add(menu, effectiveLocalDictation ? L("mode.switch.toProCloud") : L("mode.switch.toLocal"), #selector(toggleDictationMode))
+        } else {
+            add(menu, L("mode.status.freeLocalUpgrade"), #selector(upgradeFromMenu))
+            if !meetings.modelReady && meetings.phase != .preparing {
+                add(menu, L("menu.downloadLocalModel"), #selector(downloadLocalModelFromMenu))
+            }
+        }
+        menu.addItem(.separator())
         add(menu, L("menu.pasteLast"), #selector(pasteLast))
         let recentItem = NSMenuItem(title: L("menu.recent"), action: nil, keyEquivalent: "")
         let recentMenu = NSMenu(); recentMenu.autoenablesItems = false; recentMenu.delegate = self
@@ -366,7 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(recentItem)
         tidyItem.title = L("menu.tidy"); tidyItem.target = self; tidyItem.action = #selector(tidyClipboard)
         MenuStyle.apply(tidyItem); menu.addItem(tidyItem)
-        showTidyShortcut(Prefs.tidyShortcuts.first)
+        showTidyShortcut(isProEntitled ? Prefs.tidyShortcuts.first : nil)
         if auth.isSignedIn && auth.user?.guest != true {
             add(menu, L("menu.refreshVoice"), #selector(refreshVoice))
         }
@@ -379,10 +490,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, L("meeting.settings"), #selector(openMeetingSettings))
         add(menu, L("meeting.folder"), #selector(openMeetingTranscripts))
 
-        wakeItem.title = UILanguage.isKorean ? "웨이크워드 (헤이 첼로 · 헤이 그룻)" : "Wake words (Hey Cello · Hey Groot)"
-        wakeItem.target = self; wakeItem.action = #selector(toggleWake)
-        wakeItem.state = WakeController.enabled ? .on : .off
-        MenuStyle.apply(wakeItem); menu.addItem(wakeItem)
+        if WakeController.isFeatureVisible() {
+            wakeItem.title = WakeController.menuTitle()
+            wakeItem.target = self; wakeItem.action = #selector(toggleWake)
+            wakeItem.state = WakeController.enabled ? .on : .off
+            MenuStyle.apply(wakeItem); menu.addItem(wakeItem)
+        }
         add(menu, L("menu.setup"), #selector(openSetup))
         menu.addItem(.separator())
         if updater != nil { add(menu, L("menu.updates"), #selector(checkUpdates)) }
@@ -426,6 +539,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: tidy clipboard
 
     @objc func tidyClipboard() {
+        guard isProEntitled else {
+            hud.show(.error(ClipboardTidy.message(TidyError.subscriptionRequired), ClipboardTidy.action(TidyError.subscriptionRequired)))
+            return
+        }
         let target = NSWorkspace.shared.frontmostApplication
         clipboardTidy.readSelection = { [selectedTextReader] in
             try await selectedTextReader.read(from: target, board: .general)
@@ -557,12 +674,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func refreshVoice() { if auth.user?.guest == true || auth.user == nil { openSettings(); return }; showOnboarding(at: .voice) }
     @objc func openSetup() { showOnboarding() }
     @objc func openAccountSettings() { settingsNavigation.pane = .account; openSettings() }
+    @objc func upgradeFromMenu() {
+        if auth.user != nil && !isProEntitled {
+            settingsNavigation.pane = .account
+            openSettings()
+            settingsModel?.startProUpgradeFlow()
+        } else {
+            openAccountSettings()
+        }
+    }
+    @objc func toggleDictationMode() {
+        guard isProEntitled else { upgradeFromMenu(); return }
+        let nextLocal = !effectiveLocalDictation
+        Prefs.localDictationEnabled = nextLocal
+        engine.updateLocalDictationEnabled(nextLocal)
+        if nextLocal { ensureLocalModelDownloadingIfNeeded() }
+        buildMenu()
+        render(engine.state)
+    }
+    @objc func downloadLocalModelFromMenu() {
+        ensureLocalModelDownloadingIfNeeded()
+        settingsNavigation.pane = .general
+        openSettings()
+    }
+    @objc func openLocalModelSetup() {
+        ensureLocalModelDownloadingIfNeeded()
+        if !Prefs.onboardingCompleted {
+            showOnboarding(at: .localModel)
+        } else {
+            settingsNavigation.pane = .general
+            openSettings()
+        }
+    }
     @objc func openSettings() {
         guard !meetingCaptureActive else { meetings.presentManualStart(); return }
         if settingsWindow == nil {
             let model = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
+            model.attachMeetings(meetings)
             model.startEngine = { [weak self] in self?.startEngine() }
             model.onAuthChanged = { [weak self] in self?.handleAuthChanged() }
+            model.onBillingUpdated = { [weak self] billing in self?.applyBillingUpdate(billing) }
             settingsModel = model
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 600), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             w.contentMinSize = NSSize(width: 720, height: 520)
@@ -570,12 +721,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             model.applyTidyKeys = { [weak self] in self?.applyTidyKeys($0) ?? [] }
             w.contentView = NSHostingView(rootView: SettingsView(model: model, words: VocabularyModel(api: api), meetings: meetings, navigation: settingsNavigation, onSignOut: { [weak self] in self?.signOut() }, onLocalDictationToggled: { [weak self] _ in
                 guard let self else { return }
+                self.buildMenu()
                 self.render(self.engine.state)
             }))
             w.center(); settingsWindow = w
         }
         settingsModel?.triggers = Prefs.triggers
         settingsModel?.tidyKeys = Prefs.tidyShortcuts
+        settingsModel?.autoEnterBilingual = Prefs.autoEnterBilingual
+        settingsModel?.autoEnterEnglish = Prefs.autoEnterEnglish
+        settingsModel?.sendByVoiceEnabled = Prefs.sendByVoiceEnabled
+        settingsModel?.sendByVoicePhrasesText = Prefs.sendByVoicePhrasesText
+        settingsModel?.sendByVoiceAllApps = Prefs.sendByVoiceAllApps
         if let model = settingsModel { Task { await model.loadVoice(); await model.loadBilling() } }
         settingsWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
@@ -606,8 +763,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             await auth.signOut { [weak self] in
                 guard let self else { return }
                 self.diagnostics.reset(); self.bugWindow?.close(); self.bugWindow = nil
+                self.billingEntitledOverride = nil
                 self.endingSession = false
                 self.buildMenu()
+                self.syncActiveShortcuts()
                 if Prefs.onboardingCompleted && PermissionMonitor.read(previous: nil).allGranted {
                     self.startEngine()
                 } else {
@@ -629,9 +788,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         meetings.onManualPresentation = { [weak self] in self?.settingsWindow?.close() }
         meetings.googleCalendar.loginHint = { [weak self] in self?.auth.user?.email }
-        meetings.onCalendarSynchronized = { [weak self] in self?.watchRecordingCalendarSync.tick() }
+        meetings.onCalendarSynchronized = { [weak self] in
+            guard let self, self.settingsModel?.watchEnabled == true else { return }
+            self.watchRecordingCalendarSync.tick()
+        }
         meetings.googleCalendar.accessAllowed = { [weak self] in
-            self?.auth.user?.guest != true
+            guard let self, self.auth.isSignedIn else { return false }
+            if self.auth.user?.guest != true { return true }
+            return self.settingsModel?.googleCalendarAllowed == true
         }
         meetings.canStartRecording = { [weak self] in
             guard let self, !self.endingSession else { return false }
@@ -655,7 +819,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.startEngine()
             }
             self.updateMeetingMenuStatus()
+            self.syncRuntimeActivityAndUpdates()
             self.render(self.engine.state)
+        }
+    }
+
+    /// True while a meeting recording, offline meeting transcription, or live dictation is active.
+    /// Used to postpone Sparkle update checks/relaunches and to guard `scripts/install-mac.sh`.
+    private var activeWorkKind: String? {
+        if meetingCaptureActive || meetings.isBusy { return "meeting_recording" }
+        if case .running = meetings.transcription { return "meeting_transcription" }
+        switch engine.state {
+        case .preparing, .listening, .processing: return "dictation"
+        default: return nil
+        }
+    }
+
+    private func syncRuntimeActivityAndUpdates() {
+        let kind = activeWorkKind
+        // Only block external installs for meeting recording / offline transcription (long-running sessions).
+        let markerKind = (kind == "meeting_recording" || kind == "meeting_transcription") ? kind : nil
+        RuntimeActivityMarker.update(activeKind: markerKind)
+        if kind == nil {
+            updateReminder.flushDeferredRelaunchIfIdle()
         }
     }
 
@@ -673,6 +859,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engine.stop()
         Task {
             await meetings.shutdown()
+            RuntimeActivityMarker.update(activeKind: nil)
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -682,6 +869,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func setUpUpdater() {
         let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? ""
         guard !key.isEmpty, !key.hasPrefix("REPLACE") else { return }
+        updateReminder.isBusy = { [weak self] in self?.activeWorkKind != nil }
         updateReminder.showUpdate = { [weak self] in self?.checkUpdates() }
         updateReminder.onChange = { [weak self] version in
             guard let self else { return }
@@ -689,7 +877,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let version { self.updateItem.title = L("menu.updateAvailable", version) }
         }
         UNUserNotificationCenter.current().delegate = updateReminder
-        updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: updateReminder)
+        updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: updateReminder, userDriverDelegate: updateReminder)
     }
 
     // MARK: onboarding window
@@ -742,6 +930,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             model.receiveTry(text)
             return true
         }
+        if settingsWindow?.isVisible == true, settingsNavigation.pane == .handsFree, HandsFreeCursorBridge.shared.isTestArmed {
+            HandsFreeCursorBridge.shared.receiveTestText(text)
+            return true
+        }
         if let view = NSApp.keyWindow?.firstResponder as? NSTextView, view.isEditable {
             view.insertText(text, replacementRange: view.selectedRange())
             return true
@@ -753,12 +945,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !meetingCaptureActive else { meetings.presentManualStart(); return }
         if onboardingWindow == nil {
             let model = OnboardingModel(auth: auth, api: api, monitor: monitor, engine: engine)
+            model.attachMeetings(meetings)
             model.startEngine = { [weak self] in self?.startEngine() }
             model.onAuthChanged = { [weak self] in self?.handleAuthChanged() }
+            model.onBillingUpdated = { [weak self] billing in self?.applyBillingUpdate(billing) }
             model.openWords = { [weak self] in self?.openWords() }
+            model.openHandsFreeSettings = { [weak self] in
+                guard let self, HandsFreeSupport.isAvailable() else { return }
+                self.onboardingWindow?.close()
+                self.settingsNavigation.pane = .handsFree
+                self.openSettings()
+            }
             model.applyTidyKeys = { [weak self] in self?.applyTidyKeys($0) ?? [] }
             model.onFinish = { [weak self] in self?.onboardingWindow?.close(); self?.startEngine() }
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 600), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            window.delegate = self
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.isReleasedWhenClosed = false

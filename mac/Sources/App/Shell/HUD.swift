@@ -18,7 +18,7 @@ enum HUDState: Equatable {
     case tidyRestored
 }
 
-enum HUDAction: Equatable { case close, reconnect, microphoneSettings, accessibilitySettings, retryTranscription, openAccount }
+enum HUDAction: Equatable { case close, reconnect, microphoneSettings, accessibilitySettings, retryTranscription, openAccount, openLocalModel, downloadLocalOrUpgrade }
 
 /// Branded recording pill. Near-solid brand surface (not system material) so it stays legible
 /// over any app: light = Card + 2px Ink border + hard offset; dark = Night + Paper type.
@@ -75,7 +75,9 @@ final class HUD {
         switch next {
         case .done: schedule(0.6) { [weak self] in self?.show(.hidden) }
         case .copied: schedule(1.2) { [weak self] in if self?.state == .copied { self?.show(.hidden) } }
-        case .error: schedule(5) { [weak self] in if case .error = self?.state { self?.show(.hidden) } }
+        case .error(_, let action):
+            let timeout: Double = (action == .downloadLocalOrUpgrade || action == .retryTranscription) ? 10 : 5
+            schedule(timeout) { [weak self] in if case .error = self?.state { self?.show(.hidden) } }
         // Long enough to reach Undo; the result is on the clipboard either way.
         case .tidied: schedule(5) { [weak self] in if self?.state == .tidied { self?.show(.hidden) } }
         case .tidyUnchanged, .tidyRestored: schedule(1.8) { [weak self] in if self?.state == next { self?.show(.hidden) } }
@@ -242,8 +244,11 @@ struct HUDView: View {
         case .error(let message, let action):
             Image(systemName: "exclamationmark.circle").font(.system(size: 12.5, weight: .medium)).foregroundStyle(quiet)
             Text(verbatim: message).font(Theme.text(13, medium: true)).lineLimit(1)
-            if action != .close {
-                pillButton(L(actionTitleKey(action)), primary: action == .openAccount) { onAction(action) }
+            if action == .downloadLocalOrUpgrade {
+                pillButton(L("hud.button.downloadLocal"), primary: true) { onAction(.openLocalModel) }
+                pillButton(L("hud.button.upgradePro"), primary: false) { onAction(.openAccount) }
+            } else if action != .close {
+                pillButton(L(actionTitleKey(action)), primary: action == .openAccount || action == .openLocalModel) { onAction(action) }
             }
         }
     }
@@ -253,6 +258,7 @@ struct HUDView: View {
         case .retryTranscription: return "hud.button.retryTranscription"
         case .reconnect: return "hud.button.reconnect"
         case .openAccount: return "hud.button.upgradePro"
+        case .openLocalModel: return "hud.button.setupModel"
         default: return "hud.button.openSettings"
         }
     }

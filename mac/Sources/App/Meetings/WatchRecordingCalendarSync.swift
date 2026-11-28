@@ -132,7 +132,7 @@ final class WatchRecordingCalendarSync {
                 cursor = next
             }
             throw GoogleCalendarError.invalidResponse
-        } catch APIError.http(404, _) {
+        } catch APIError.http(404, _), APIError.http(503, _) {
             status = "Voice-note metadata is not available on this app’s configured server."
         } catch {
             status = "Voice-note calendar matching will retry after the next calendar sync."

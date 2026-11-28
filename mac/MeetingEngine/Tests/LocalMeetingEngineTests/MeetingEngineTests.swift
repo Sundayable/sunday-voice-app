@@ -349,13 +349,55 @@ final class MeetingStoreTests: XCTestCase {
     func testRecordingCutShortByAQuitIsTranscribedAndMarkedIncomplete() async throws {
         let store = try MeetingSessionStore(root: transcripts, workRoot: work)
         try TestAudio.chunk(in: store.captureDirectory, source: .microphone, start: 0, seconds: 2)
+        try TestAudio.chunk(in: store.captureDirectory, source: .system, start: 2, seconds: 3)
         // No finishRecording: the app went away mid-meeting.
         let processor = MeetingPostProcessor(root: transcripts, workRoot: work, engine: FakeEngine())
         let url = try await processor.process(try XCTUnwrap(processor.pending().first), keepAudio: false) { _ in }
         let document = try XCTUnwrap(MeetingSessionStore.readDocument(in: url.deletingLastPathComponent()))
         XCTAssertTrue(document.incomplete)
-        XCTAssertEqual(document.segments.count, 1)
+        XCTAssertEqual(document.segments.count, 2)
         XCTAssertTrue(document.notes.contains { $0.contains("closed before this recording was stopped") })
+        let metadata = try XCTUnwrap(RecordingMetadataStore.read(beside: url))
+        XCTAssertGreaterThanOrEqual(metadata.durationSeconds ?? 0, 2.9, "Rescued chunks must update RecordingMetadata duration")
+    }
+
+    func testCancelledTranscriptionPreservesAudioWithoutIncrementingAttempts() async throws {
+        let store = try MeetingSessionStore(root: transcripts, workRoot: work)
+        let chunk = try TestAudio.chunk(in: store.captureDirectory, source: .system, start: 0, seconds: 2)
+        _ = try await store.finishRecording(incomplete: false)
+        let engine = FakeEngine(holdRecognize: true)
+        let processor = MeetingPostProcessor(root: transcripts, workRoot: work, engine: engine)
+        let dir = store.captureDirectory
+        let task = Task { try await processor.process(dir, keepAudio: false) { _ in } }
+        for _ in 0..<400 where !engine.recognizeWaiting { try await Task.sleep(nanoseconds: 5_000_000) }
+        task.cancel()
+        engine.resumeRecognize()
+        do { _ = try await task.value; XCTFail("Expected CancellationError") }
+        catch is CancellationError {}
+        XCTAssertTrue(FileManager.default.fileExists(atPath: chunk.url.path), "Partial audio must never be deleted on cancel")
+        XCTAssertEqual(MeetingSessionStore.readMarker(in: dir)?.attempts, 0, "Cancellation must not burn retry budget")
+        XCTAssertEqual(processor.pending().count, 1)
+    }
+
+    func testParkedRecoveryAudioCanBeRequeuedAndTranscribedLocally() async throws {
+        let store = try MeetingSessionStore(root: transcripts, workRoot: work)
+        try TestAudio.chunk(in: store.captureDirectory, source: .system, start: 0, seconds: 2)
+        let transcript = try await store.finishRecording(incomplete: false)
+        let sessionDir = transcript.deletingLastPathComponent()
+        let failingProcessor = MeetingPostProcessor(root: transcripts, workRoot: work, engine: FakeEngine(failures: 3))
+        for _ in 1...3 {
+            _ = try? await failingProcessor.process(store.captureDirectory, keepAudio: false) { _ in }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sessionDir.appendingPathComponent("Recovery Audio").path))
+
+        let recoveringProcessor = MeetingPostProcessor(root: transcripts, workRoot: work, engine: FakeEngine())
+        let requeuedCandidate = try await recoveringProcessor.requeueParkedRecovery(in: sessionDir)
+        let requeued = try XCTUnwrap(requeuedCandidate)
+        let recoveredURL = try await recoveringProcessor.process(requeued, keepAudio: false) { _ in }
+        let document = try XCTUnwrap(MeetingSessionStore.readDocument(in: recoveredURL.deletingLastPathComponent()))
+        XCTAssertEqual(document.segments.count, 1)
+        XCTAssertNotNil(document.finishedAt)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sessionDir.appendingPathComponent("Recovery Audio").path))
     }
 
     func testETAEstimatorWarmsUpSmoothlyAndConvergesToZero() {
