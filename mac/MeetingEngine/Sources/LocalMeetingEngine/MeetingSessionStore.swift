@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Kept inside a recording's capture folder from the first second until its transcript is final.
 /// It is how an interrupted or not-yet-transcribed recording is found again after a restart.
@@ -105,6 +106,7 @@ actor MeetingSessionStore {
 /// A recording is removed from the capture folder only once its transcript is safely written.
 actor MeetingPostProcessor {
     static let maxAttempts = 3
+    private static let log = Logger(subsystem: "ca.sundayable.sunday-voice", category: "meetings")
     private let root: URL
     private let workRoot: URL
     private let engine: any MeetingTranscribing
@@ -126,6 +128,36 @@ actor MeetingPostProcessor {
                   marker.attempts < Self.maxAttempts else { return nil }
             return (folder, marker.startedAt)
         }.sorted { $0.1 < $1.1 }.map(\.0)
+    }
+
+    /// Re-queues a recording whose audio was parked in `Recovery Audio` after repeated transient failures
+    /// (for example low disk space) so offline transcription can run again locally without losing audio.
+    @discardableResult
+    func requeueParkedRecovery(in sessionDirectory: URL) throws -> URL? {
+        let recovery = sessionDirectory.appendingPathComponent("Recovery Audio", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: recovery.path),
+              var document = MeetingSessionStore.readDocument(in: sessionDirectory) else { return nil }
+        let files = ((try? FileManager.default.contentsOfDirectory(at: recovery, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "caf" || $0.pathExtension == "json" }
+        guard !files.isEmpty else { return nil }
+        let captureDirectory = workRoot.appendingPathComponent(document.sessionID.uuidString, isDirectory: true)
+        try MeetingSessionStore.privateDirectory(captureDirectory)
+        for file in files {
+            let dest = captureDirectory.appendingPathComponent(file.lastPathComponent)
+            if !FileManager.default.fileExists(atPath: dest.path) {
+                try FileManager.default.moveItem(at: file, to: dest)
+            }
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: dest.path)
+        }
+        let marker = PendingRecording(sessionID: document.sessionID, sessionFolder: sessionDirectory.lastPathComponent,
+                                      startedAt: document.startedAt, attempts: 0)
+        try MeetingSessionStore.writeMarker(marker, in: captureDirectory)
+        document.finishedAt = nil
+        document.recoveredChunkCount = 0
+        try MeetingSessionStore.writeDocument(document, directory: sessionDirectory)
+        try? FileManager.default.removeItem(at: recovery)
+        Self.log.notice("meeting_recovery_requeued session=\(document.sessionID.uuidString, privacy: .public)")
+        return captureDirectory
     }
 
     /// Writes the final transcript for one recording and returns its location.
@@ -150,7 +182,16 @@ actor MeetingPostProcessor {
             try? FileManager.default.removeItem(at: captureDirectory)
             return sessionDirectory.appendingPathComponent("Transcript.txt")
         }
+        // If the app closed before `finishRecording` ran, fold every rescued chunk into RecordingMetadata
+        // so duration_seconds and ended_at match the full recovered audio.
+        if document.recordingEndedAt == nil, !chunks.isEmpty {
+            var recording = document.recording ?? RecordingMetadata(recordingID: marker.sessionID.uuidString)
+            var timeline = RecordingAudioTimeline()
+            for chunk in chunks { timeline.observe(chunk, metadata: &recording) }
+            document.recording = recording
+        }
         let began = Date()
+        Self.log.notice("meeting_transcribe_start session=\(marker.sessionID.uuidString, privacy: .public) chunks=\(chunks.count, privacy: .public) attempt=\(marker.attempts + 1, privacy: .public)")
         do {
             // Assemble audio first so total audio duration is known while models load.
             let sources = MeetingAudioSource.allCases.filter { source in chunks.contains { $0.source == source } }
@@ -213,14 +254,22 @@ actor MeetingPostProcessor {
             // Text is durable before the only copy of the audio is removed.
             try MeetingSessionStore.writeDocument(document, directory: sessionDirectory)
             try? FileManager.default.removeItem(at: captureDirectory)
+            Self.log.notice("meeting_transcribe_done session=\(marker.sessionID.uuidString, privacy: .public) audio_s=\(audioSeconds, privacy: .public) segments=\(document.segments.count, privacy: .public)")
             return sessionDirectory.appendingPathComponent("Transcript.txt")
         } catch {
-            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            if error is CancellationError || Task.isCancelled {
+                Self.log.notice("meeting_transcribe_cancelled session=\(marker.sessionID.uuidString, privacy: .public) preserved=true")
+                throw CancellationError()
+            }
             // A missing model is a setup state, not a failed attempt.
             if (error as? MeetingEngineError) == .modelMissing { throw error }
             marker.attempts += 1
+            Self.log.error("meeting_transcribe_failed session=\(marker.sessionID.uuidString, privacy: .public) attempt=\(marker.attempts, privacy: .public) err=\(String(describing: type(of: error)), privacy: .public)")
             try? MeetingSessionStore.writeMarker(marker, in: captureDirectory)
-            if marker.attempts >= Self.maxAttempts { try? park(captureDirectory, document: &document, sessionDirectory: sessionDirectory) }
+            if marker.attempts >= Self.maxAttempts {
+                Self.log.error("meeting_transcribe_parked session=\(marker.sessionID.uuidString, privacy: .public)")
+                try? park(captureDirectory, document: &document, sessionDirectory: sessionDirectory)
+            }
             throw error
         }
     }

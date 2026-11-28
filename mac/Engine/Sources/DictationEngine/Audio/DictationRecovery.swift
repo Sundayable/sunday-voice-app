@@ -92,7 +92,7 @@ public final class DictationRecoveryStore: @unchecked Sendable {
     }
     /// Called only after history is durably saved or insertion is confirmed. Completed journal
     /// text must not outlive the user's bounded/clearable history. Unresolved audio is untouched.
-    func retireCompleted(_ id: String) throws {
+    public func retireCompleted(_ id: String) throws {
         try lock.withLock {
             guard let r = records[id] ?? read(id), r.complete, writers[id] == nil else { return }
             try FileManager.default.removeItem(at: folder(id))
@@ -107,6 +107,29 @@ public final class DictationRecoveryStore: @unchecked Sendable {
             records.removeAll(); syncedBytes.removeAll()
         }
     }
+    /// Delete items whose recording started more than `age` ago. Never touches a live recording or
+    /// an id in `keep`. A missing or empty folder is fine. Returns how many items were removed.
+    @discardableResult
+    public func purgeExpired(olderThan age: TimeInterval, keep: Set<String> = [], now: Date = Date()) -> Int {
+        lock.withLock {
+            guard let dirs = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return 0 }
+            var removed = 0
+            for dir in dirs {
+                let record = (try? Data(contentsOf: dir.appendingPathComponent("record.json")))
+                    .flatMap { try? JSONDecoder().decode(DictationRecoveryRecord.self, from: $0) }
+                if let record, writers[record.id] != nil || keep.contains(record.id) { continue }
+                let started = record?.startedAt
+                    ?? ((try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? now)
+                guard now.timeIntervalSince(started) > age else { continue }
+                if (try? FileManager.default.removeItem(at: dir)) != nil {
+                    removed += 1
+                    if let id = record?.id { records[id] = nil; syncedBytes[id] = nil }
+                }
+            }
+            return removed
+        }
+    }
+
     private func read(_ id: String) -> DictationRecoveryRecord? {
         guard let data = try? Data(contentsOf: folder(id).appendingPathComponent("record.json")) else { return nil }
         return try? JSONDecoder().decode(DictationRecoveryRecord.self, from: data)

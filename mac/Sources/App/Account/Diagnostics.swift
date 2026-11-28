@@ -19,6 +19,9 @@ final class Diagnostics: ObservableObject {
     private let breadcrumbWriter = DispatchQueue(label: "SundayVoice.diagnostic-storage", qos: .utility)
     private let settingKeys = ["soundsEnabled", "useRecentContext", "keepTranscriptOnClipboard", "openAtLogin", "tidyShortcuts", "triggers", "uiLanguage"]
     init(auth: AuthService, api: APIClient) { self.auth = auth; self.api = api }
+    /// Offline local dictation: no dictation event and no dictation text leaves the Mac.
+    static func uploadsEvent(_ name: String, localDictation: Bool) -> Bool { !(localDictation && name.hasPrefix("dictation_")) }
+    static func uploadsDeliveredText(localDictation: Bool) -> Bool { !localDictation }
     var metadata: [String: Any] { ["app_version": AppVersion.header, "os_version": ProcessInfo.processInfo.operatingSystemVersionString] }
 
     func begin() {
@@ -66,6 +69,8 @@ final class Diagnostics: ObservableObject {
             if !ids.contains(id) { ids.append(id); ids = Array(ids.suffix(20)) }
         }
         breadcrumb(body)
+        // Offline local dictation promises no network for a dictation: keep its events on this Mac.
+        guard Self.uploadsEvent(event.name, localDictation: Prefs.localDictationEnabled) else { return }
         let owner = self.owner
         Task {
             guard self.owner == owner, auth.isSignedIn else { return }
@@ -76,7 +81,9 @@ final class Diagnostics: ObservableObject {
         }
     }
     func delivery(_ record: DeliveryRecord) {
-        guard auth.isSignedIn, owner == auth.user?.id, !record.isDiagnostic else { return }
+        // Server history only for signed-in cloud dictation; offline local dictation text never leaves the Mac.
+        guard auth.isSignedIn, owner == auth.user?.id, !record.isDiagnostic,
+              Self.uploadsDeliveredText(localDictation: Prefs.localDictationEnabled) else { return }
         let meta = metadata.merging(["mode": record.mode.rawValue, "app_bundle_id": record.bundleID ?? "unknown", "outcome": record.outcome.rawValue]) { _, new in new }
         let owner = self.owner
         Task {

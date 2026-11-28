@@ -238,7 +238,7 @@ struct MeetingPanelView: View {
                         : (ko ? "음성 모델(약 660 MB)을 한 번만 받으면 돼요. 미팅은 바로 녹음되고 끝나면 이 Mac에서 전사해요." : "Download the speech models once: about 660 MB, plus space for on-device preparation. Meetings are recorded straight away and transcribed on this Mac afterwards."))
                     .font(Theme.text(13)).foregroundStyle(Theme.muted(scheme))
                     .fixedSize(horizontal: false, vertical: true)
-                Text(coordinator.statusMessage).font(Theme.text(12))
+                Text(coordinator.setupStatusMessage).font(Theme.text(12))
                 if coordinator.isBusy {
                     ProgressView(value: coordinator.setupProgress > 0 ? coordinator.setupProgress : nil)
                     Text(ko ? "현재 녹음 중인 미팅이 없어요." : "No meeting is being recorded.").font(Theme.label(10)).foregroundStyle(Theme.muted(scheme))
@@ -345,6 +345,28 @@ struct MeetingPanelView: View {
 }
 
 extension MeetingCoordinator {
+    var setupStatusMessage: String {
+        if phase == .preparing {
+            if setupProgress >= 0.94 { return L("meeting.model.preparing") }
+            if setupProgress > 0 {
+                let pct = "\(Int((min(1, max(0, setupProgress)) * 100).rounded()))"
+                return L("meeting.model.progress", pct)
+            }
+            return L("meeting.model.downloading")
+        }
+        if phase == .failed {
+            if statusMessage.localizedCaseInsensitiveContains("disk space") {
+                return L("meeting.model.lowDisk")
+            }
+            if statusMessage.localizedCaseInsensitiveContains("model") {
+                return L("meeting.model.failed")
+            }
+            return statusMessage
+        }
+        if !needsModelSetup { return L("meeting.model.ready") }
+        return statusMessage
+    }
+
     var recordingStatusMessage: String {
         guard UILanguage.isKorean else { return statusMessage }
         switch statusMessage {
@@ -387,8 +409,10 @@ struct MeetingSettingsView: View {
     @ObservedObject var coordinator: MeetingCoordinator
     @ObservedObject private var lang = UILanguageObserver.shared
     var isGuest = false
+    var googleCalendarAllowed: Bool? = nil
     @Environment(\.colorScheme) private var scheme
     private var ko: Bool { UILanguage.isKorean }
+    private var canUseGoogleCalendar: Bool { googleCalendarAllowed ?? !isGuest }
 
     var body: some View {
         let _ = lang.revision
@@ -446,8 +470,19 @@ struct MeetingSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }.modifier(MeetingSettingsCard())
-            if !isGuest {
+            if canUseGoogleCalendar {
                 GoogleCalendarSettingsView(calendar: coordinator.googleCalendar).modifier(MeetingSettingsCard())
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Google Calendar").font(Theme.display(16, semibold: true))
+                        ModeBadge(kind: .proComingSoon)
+                    }
+                    Text(verbatim: L("settings.calendar.comingSoonBody"))
+                        .font(Theme.text(12)).foregroundStyle(Theme.muted(scheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .modifier(MeetingSettingsCard())
             }
             DisclosureGroup(ko ? "기타 미팅 감지 방식" : "Other ways to detect meetings") {
                 VStack(alignment: .leading, spacing: 12) {

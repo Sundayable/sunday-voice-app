@@ -9,6 +9,8 @@ final class TurnPipeline {
         case started(id: String)
         case checkpoint(id: String, text: String)
         case degraded(id: String, code: String)
+        /// A failed session is being replaced once, transparently (diagnostics only).
+        case retrying(id: String, code: String)
         case result(id: String, text: String, stats: Stats)
         case error(id: String, code: String)
     }
@@ -56,6 +58,11 @@ final class TurnPipeline {
         var bytes = 0
         var fallbacks = 0
         var inFlight = 0
+        /// Everything captured for this turn, kept for one transparent retry on a fresh session.
+        var audioLog = Data()
+        var retried = false
+        /// Words the failed session had already returned, kept in case the retry returns nothing.
+        var prefailurePartial = ""
         init(id: String, mode: DictationMode, app: String?) { self.id = id; self.mode = mode; self.app = app }
     }
 
@@ -64,6 +71,8 @@ final class TurnPipeline {
         var primaryProgressGrace = 0.35
         var speculationInterval = 0.45
         var finalTimeout = 15.0
+        /// Longest turn a transparent retry replays at once (the relay accepts a 30-second burst).
+        var maximumReplayBytes = 25 * 48_000
         var rewriteTimeout = 12.0
         var segmentSeconds = 25.0
         var minimumBytes = 4800 // 0.1 s of PCM16 @ 24 kHz
@@ -117,7 +126,18 @@ final class TurnPipeline {
         if !socket.isReady {
             do { try await socket.connect(); turnCount = 0 } catch {
                 guard turn === t else { return }
-                degrade(t, (error as? FailureCode)?.code ?? "connection_lost"); return
+                let code = (error as? FailureCode)?.code ?? "connection_lost"
+                if Self.isSubscriptionRequired(code) { fail(t, code); return }
+                if Self.isRetryable(code), !t.retried, !isShutdown {
+                    t.retried = true
+                    onEvent?(.retrying(id: t.id, code: code))
+                    do { try await socket.connect(); turnCount = 0 } catch {
+                        guard turn === t else { return }
+                        degrade(t, (error as? FailureCode)?.code ?? code); return
+                    }
+                } else {
+                    degrade(t, code); return
+                }
             }
         }
         guard !isShutdown, turn === t else { return }
@@ -136,6 +156,9 @@ final class TurnPipeline {
         if prompt != socket.prompt { socket.updatePrompt(prompt) }
         t.context = context?.rewriteContext(app: app) ?? []
         socket.setTurnContext(id: id, app: app)
+        // The relay serves exactly one turn per session. Count it now, not on success: a turn that
+        // ends in no speech or an error has still used the session, and reusing it answers stt_busy.
+        turnCount += 1
         t.acceptingAudio = true
         flushPendingAudio(for: t)
         onEvent?(.started(id: id))
@@ -146,6 +169,7 @@ final class TurnPipeline {
         guard let t = turn, t.released == nil else { return }
         t.bytes += pcm.count
         guard t.offlineCode == nil else { return } // the engine keeps journaling locally
+        if t.audioLog.count <= tuning.maximumReplayBytes { t.audioLog.append(pcm) }
         if t.acceptingAudio && socket.isReady {
             send(pcm, turn: t)
         } else {
@@ -226,6 +250,14 @@ final class TurnPipeline {
         // Otherwise start() owns the queued audio and commits it after the connection opens.
     }
 
+    /// Synchronously abandon the current turn and its session (a key press preempting background
+    /// recovery). The next `start` opens a fresh session; the abandoned audio stays in the journal.
+    func dropTurn() {
+        guard !isShutdown else { return }
+        if let t = turn { clear(t) }
+        socket.close(); turnCount = 0
+    }
+
     /// Drop the turn and reconnect, so late events from it cannot attach to the next one.
     func cancel() async {
         guard !isShutdown else { return }
@@ -274,12 +306,12 @@ final class TurnPipeline {
             if !t.order.contains(item) { t.order.append(item) }
             t.texts[item, default: ""] += text
             updateFinal(t)
-            // Speculation stays bounded for short utterances. Long turns rewrite committed pieces.
-            guard t.bytes < 15 * 48_000, t.completed.isEmpty else { return }
-            let current = t.partial
+            // Speculate on the active uncompleted segment (including tail segments after an early
+            // 6-second pause commit), never re-rewriting already committed segments.
+            guard !t.finalFlag.isSet, let current = activeSpeculationText(for: t) else { return }
             let key = QualityChecks.normalized(current)
             if QualityChecks.length(key) >= 5, QualityChecks.endsSentence(current), t.translations[key] == nil {
-                for old in Array(t.translations.keys) where old != key {
+                for old in Array(t.translations.keys) where old != key && t.translationProgress[old]?.isNeeded != true {
                     t.translations.removeValue(forKey: old)?.cancel()
                 }
                 _ = translation(for: t, current); t.lastSpeculation = uptime()
@@ -298,16 +330,23 @@ final class TurnPipeline {
             }
             t.completed.insert(item); t.finalAt = uptime()
             updateFinal(t)
-            // A natural pause can finalize the first piece before 15 seconds. Rewrite that
-            // stable piece immediately and stop repeatedly rewriting the growing whole turn.
-            t.speculator?.cancel()
+            // Mark the completed segment's pieces needed and start rewriting them immediately.
+            // Drop stale speculative drafts from this segment, but keep speculation alive for
+            // subsequent segments until the turn itself is finished.
             for piece in Self.rewritePieces(t.texts[item] ?? "") { _ = translation(for: t, piece, committed: true) }
             for key in Array(t.translations.keys) where t.translationProgress[key]?.isNeeded != true {
                 t.translations.removeValue(forKey: key)?.cancel()
             }
-        case .failed: degrade(t, FailureCode.transcriptionFailed.code)
-        case .error(let code): degrade(t, "STT_\(code)")
-        case .disconnected: degrade(t, FailureCode.connectionLost.code)
+            if t.finalFlag.isSet {
+                t.speculator?.cancel()
+                t.speculator = nil
+            }
+        case .failed: recover(t, FailureCode.transcriptionFailed.code)
+        case .error(let code):
+            let mapped = "STT_\(code)"
+            if Self.isSubscriptionRequired(mapped) { fail(t, mapped); return }
+            recover(t, mapped)
+        case .disconnected: recover(t, FailureCode.connectionLost.code)
         }
     }
 
@@ -351,19 +390,34 @@ final class TurnPipeline {
 
     // MARK: speculation and rewrite
 
+    /// Active uncompleted segment eligible for live speculation (bounded to one rewrite piece so
+    /// long turns never repeatedly rewrite the whole growing transcript, while tail segments after
+    /// an early 6s pause commit still finish rewriting during speech).
+    private func activeSpeculationText(for t: Turn) -> String? {
+        guard let activeItem = t.order.last(where: { !t.completed.contains($0) }) else { return nil }
+        let raw = (t.texts[activeItem] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        let canonical = checks.canonicalTranscript(raw)
+        let pieces = Self.rewritePieces(canonical)
+        guard pieces.count == 1, let piece = pieces.first else { return nil }
+        return piece
+    }
+
     private func speculate(_ t: Turn) async {
-        while turn === t, t.bytes < 15 * 48_000, t.completed.isEmpty, !t.finalFlag.isSet, !Task.isCancelled {
+        defer { if turn === t { t.speculator = nil } }
+        while turn === t, !t.finalFlag.isSet, !Task.isCancelled {
             let delta = uptime() - t.lastSpeculation
             if delta < tuning.speculationInterval {
                 try? await Task.sleep(nanoseconds: UInt64((tuning.speculationInterval - delta) * 1e9))
             }
-            guard turn === t, t.completed.isEmpty, !t.finalFlag.isSet, !Task.isCancelled else { return }
-            let text = checks.canonicalTranscript(t.partial.trimmingCharacters(in: .whitespacesAndNewlines))
-            let key = QualityChecks.normalized(text)
-            if QualityChecks.length(key) >= 5, t.translations[key] == nil {
-                // At most two speculative requests in flight; superseded ones are dropped before they cost tokens.
-                if t.inFlight < 2 {
-                    _ = translation(for: t, text); t.lastSpeculation = uptime()
+            guard turn === t, !t.finalFlag.isSet, !Task.isCancelled else { return }
+            if let text = activeSpeculationText(for: t) {
+                let key = QualityChecks.normalized(text)
+                if QualityChecks.length(key) >= 5, t.translations[key] == nil {
+                    // At most two speculative requests in flight; superseded ones are dropped before they cost tokens.
+                    if t.inFlight < 2 {
+                        _ = translation(for: t, text); t.lastSpeculation = uptime()
+                    }
                 }
             }
             try? await Task.sleep(nanoseconds: 35_000_000)
@@ -438,6 +492,11 @@ final class TurnPipeline {
             catch { t.offlineCode = "stt_final_timeout"; socket.close() }
         }
         guard turn === t else { return }
+        if t.final.isEmpty, !t.prefailurePartial.isEmpty {
+            // The retry produced nothing: deliver what the first session heard; the audio stays saved.
+            t.texts = ["prefailure": t.prefailurePartial]; t.order = ["prefailure"]; t.committedOrder = []
+            t.final = t.prefailurePartial; t.audioIncomplete = true
+        }
         guard !t.final.isEmpty else { fail(t, t.offlineCode ?? FailureCode.noSpeech.code); return }
         // Every raw checkpoint has reached durable storage before any final rewrite starts.
         onEvent?(.checkpoint(id: t.id, text: t.final))
@@ -476,7 +535,7 @@ final class TurnPipeline {
         let stats = Stats(mode: t.mode, audioSeconds: Double(t.bytes) / 48000,
                           releaseToReadyMs: ms(now - released), releaseToSTTFinalMs: ms(max(0, (t.finalAt ?? now) - released)),
                           fallbacks: t.fallbacks, finalRewriteStartedBeforeSTTFinal: cached, audioComplete: t.offlineCode == nil && !t.audioIncomplete)
-        clear(t); turnCount += 1
+        clear(t)
         if turnCount >= socket.maximumTurns, socket.isReady { socket.close() }
         context?.record(id: t.id, transcript: t.final, output: out, mode: t.mode, app: t.app)
         onEvent?(.result(id: t.id, text: out, stats: stats))
@@ -491,6 +550,54 @@ final class TurnPipeline {
     private func fail(_ t: Turn, _ code: String) {
         guard turn === t else { return }
         clear(t)
+        if turnCount >= socket.maximumTurns, socket.isReady { socket.close() }
         onEvent?(.error(id: t.id, code: code))
+    }
+
+    /// Codes that a fresh session can fix. Account, quota, consent and malformed-audio errors are final.
+    static func isRetryable(_ code: String) -> Bool {
+        let final = ["subscription_required", "quota_exceeded", "consent_required", "not_signed_in", "not_invited",
+                     "audio_too_long", "invalid_", "unsupported_transport", "missing_turn"]
+        return !final.contains { code.contains($0) }
+    }
+
+    /// One transparent retry: drop the failed session, open a fresh one and replay this turn's audio.
+    /// Live audio keeps arriving meanwhile (it is in `audioLog` and replayed once). Falls back to
+    /// `degrade` (record locally, retry later) if the turn is too long to replay or the retry fails.
+    private func recover(_ t: Turn, _ code: String) {
+        guard turn === t else { return }
+        guard !t.retried, t.offlineCode == nil, !isShutdown, Self.isRetryable(code),
+              t.audioLog.count == t.bytes, t.bytes <= tuning.maximumReplayBytes else { degrade(t, code); return }
+        t.retried = true
+        t.prefailurePartial = t.partial
+        onEvent?(.retrying(id: t.id, code: code))
+        socket.close(); turnCount = 0
+        t.acceptingAudio = false
+        t.speculator?.cancel(); t.speculator = nil
+        for task in t.translations.values { task.cancel() }
+        t.translations = [:]; t.translationIDs = [:]; t.translationProgress = [:]
+        t.texts = [:]; t.order = []; t.committedOrder = []; t.completed = []
+        t.commits = 0; t.segmentBytes = 0; t.quietBytes = 0; t.audioIncomplete = false; t.partial = ""; t.final = ""
+        pendingAudio = []; pendingAudioBytes = 0
+        Task { @MainActor in
+            do { try await self.socket.connect() } catch {
+                guard self.turn === t else { return }
+                self.degrade(t, (error as? FailureCode)?.code ?? code); return
+            }
+            guard self.turn === t, !self.isShutdown, t.offlineCode == nil else { return }
+            self.turnCount = 0
+            self.socket.setTurnContext(id: t.id, app: t.app)
+            self.turnCount += 1
+            // Audio that arrived while reconnecting is already in the log: replay the log once.
+            self.pendingAudio = []; self.pendingAudioBytes = 0
+            t.acceptingAudio = true
+            let replay = t.audioLog
+            if !replay.isEmpty { self.send(replay, turn: t) }
+            if t.released != nil { self.commitTail(t); self.launchFinish(t) }
+        }
+    }
+
+    private static func isSubscriptionRequired(_ code: String) -> Bool {
+        code == "subscription_required" || code == "STT_subscription_required"
     }
 }

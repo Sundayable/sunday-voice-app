@@ -7,6 +7,7 @@ struct ControlGate {
     private var deadline: Double?
     private var active = false
     private var blocked = false
+    var isActive: Bool { active }
 
     mutating func modifiers(control: Bool, other: Bool, keysDown: Bool, now: Double, delay: Double) -> Action {
         if !control {
@@ -25,6 +26,11 @@ struct ControlGate {
         let result: Action = active ? .cancel : .none
         active=false; deadline=nil; blocked=true
         return result
+    }
+    /// Blocks an unstarted hold (e.g. Control+Scroll zoom before the hold delay), without ever cancelling active speech.
+    mutating func blockBeforeStart() {
+        guard down, !active else { return }
+        deadline = nil; blocked = true
     }
     mutating func poll(now: Double) -> Action {
         guard down,!blocked,!active,let limit=deadline,now>=limit else {return .none}

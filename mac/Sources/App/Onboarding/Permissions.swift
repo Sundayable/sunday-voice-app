@@ -18,6 +18,12 @@ enum SettingsLink {
         return URL(string: "x-apple.systempreferences:\(pane)?\(anchor)")!
     }
     static let soundInput = URL(string: "x-apple.systempreferences:com.apple.preference.sound?input")!
+
+    /// System Settings → Accessibility → Vocal Shortcuts (macOS 15+ Apple Silicon).
+    static func vocalShortcuts(majorVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion) -> URL {
+        _ = majorVersion
+        return URL(string: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?AdaptiveVoiceShortcuts")!
+    }
 }
 
 /// Permission state as the onboarding sees it. `inputMonitoringNeeded` is set only when the

@@ -1,4 +1,5 @@
 import AppKit
+import Network
 import AVFoundation
 import ApplicationServices
 import Carbon
@@ -53,6 +54,17 @@ public final class DictationEngine: DictationEngineProtocol {
     public var onDiagnostic: ((DiagnosticEvent) -> Void)?
     public var onDelivery: ((DeliveryRecord) -> Bool)?
     public var localTranscriber: LocalDictationTranscriber?
+    public var onSubscriptionFallbackToLocal: (() -> Void)?
+    /// Injected in unit tests to verify auto-Enter without posting a live system Return key.
+    var postReturnKey: @MainActor () -> Void = {
+        for down in [true, false] {
+            let e = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down)
+            e?.flags = []
+            e?.post(tap: .cgSessionEventTap)
+        }
+    }
+    /// Injected in unit tests to check whether the paste target still owns focus before pressing Return.
+    var frontmostPIDProvider: @MainActor () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     private let localDictionary: LocalPersonalDictionary
     /// Hands-free sessions only: every PCM chunk (24 kHz mono Int16) sent to STT, on the audio queue.
     /// The app feeds an on-device recognizer that listens for the end phrase. Never stored or logged.
@@ -70,7 +82,8 @@ public final class DictationEngine: DictationEngineProtocol {
     public var prepareHandsFreeDelivery: ((String?) -> Double)?
     private var completeAudio: [String: Bool] = [:]
 
-    private enum Origin: Equatable { case modifier(Int), mouse(Int), key(Int), manual, handsFree }
+    /// `.recovery`: background re-transcription of a saved failed dictation; any key press preempts it.
+    private enum Origin: Equatable { case modifier(Int), mouse(Int), key(Int), manual, handsFree, recovery }
     private struct Active {
         let id: String
         let mode: DictationMode
@@ -86,6 +99,8 @@ public final class DictationEngine: DictationEngineProtocol {
         var stopping = false
         /// Hands-free (wake phrase) dictation: press Return after a confirmed paste.
         var submit = false
+        /// True for public Vocal Shortcuts cursor-only hands-free (uses standard paste + Send by voice safety list).
+        var cursorHandsFree = false
         /// Ephemeral AX screen terms captured at turn start (never logged).
         var screenTerms: [String] = []
         /// True when this turn runs 100% locally (Free Local Mode, zero external APIs).
@@ -95,10 +110,25 @@ public final class DictationEngine: DictationEngineProtocol {
         /// Benchmark only: receives the stripped result instead of delivery.
         var sink: ((String, Double, Bool) -> Void)?
         init(id: String, mode: DictationMode, origin: Origin, target: Paster.Target, pressAt: Double, beganAt: Double = uptime(),
-             screenTerms: [String] = [], localMode: Bool = false) {
+             screenTerms: [String] = [], localMode: Bool = false, cursorHandsFree: Bool = false) {
             self.id = id; self.mode = mode; self.origin = origin; self.target = target; self.pressAt = pressAt; self.beganAt = beganAt
-            self.screenTerms = screenTerms; self.localMode = localMode
+            self.screenTerms = screenTerms; self.localMode = localMode; self.cursorHandsFree = cursorHandsFree
         }
+    }
+
+    /// A released Free Local Mode turn queued for serialized offline transcription.
+    /// Lives outside `active` so new recordings, tap-disabled events, or stray modifiers can never cancel it.
+    private struct LocalPendingTurn {
+        let id: String
+        let mode: DictationMode
+        let origin: Origin
+        let target: Paster.Target
+        let released: Double
+        let submit: Bool
+        let cursorHandsFree: Bool
+        let screenTerms: [String]
+        let localAudio: Data
+        let sink: ((String, Double, Bool) -> Void)?
     }
 
     private var configuration: EngineConfiguration?
@@ -113,6 +143,21 @@ public final class DictationEngine: DictationEngineProtocol {
     private var heldKeys = HeldKeys()
     private var timers: [Timer] = []
     private var wakeObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    /// Network path changes (Wi-Fi switch, VPN, sleep) make a warm session stale; reconnect while idle.
+    private var pathMonitor: NWPathMonitor?
+    private var lastPathSignature: String?
+    /// Background recovery of failed dictations: where each was going, and how many attempts ran.
+    private var recoveryTargets: [String: Paster.Target] = [:]
+    private var recoveryAttempts: [String: Int] = [:]
+    private var recoveryDeferrals: [String: Int] = [:]
+    private var lastRecoveryPurge = 0.0
+    /// Saved audio of a dictation that never produced text is kept this long, then deleted.
+    public static let recoveryRetention: TimeInterval = 7 * 86_400
+    /// Short window after a modifier-hold begins where a chord (e.g. slow Ctrl+C) can still cancel cleanly.
+    /// Once the user has been speaking past this window, accidental clicks/scrolls/modifier brushes never cancel.
+    static let chordGraceSeconds = 0.6
+    /// Minimum audio (1.5 s at 24 kHz mono Int16) considered substantial speech: never silently discarded.
+    static let substantialAudioBytes = 72_000
     private var busyWithoutDictation = 0
     /// A released dictation always ends within the pipeline timeouts (STT final 15 s + rewrite 12 s).
     static let stuckAfterRelease = 60.0
@@ -121,6 +166,9 @@ public final class DictationEngine: DictationEngineProtocol {
     private var hotkeyHandler: EventHandlerRef?
     private var heldHotkey: UInt32?
     private var active: Active?
+    private var localQueue: [LocalPendingTurn] = []
+    private var localTurnInFlight: LocalPendingTurn?
+    private var localDrainTask: Task<Void, Never>?
     private var lastResult = ""
     private let recent = RecentContext()
     private let learner = CorrectionLearner()
@@ -137,7 +185,7 @@ public final class DictationEngine: DictationEngineProtocol {
     // volume relative to the system output volume, so muting the Mac silences them.
     // Levels (Dan 2026-10-05: start was too quiet): Tink is a ~16 ms click that lands on the first
     // syllable and gets masked, Pop plays into silence — start 0.9 (+11 dB), end 0.45 (+5 dB).
-    // Peaks stay at -9.7 / -18 dBFS (no clipping).
+    // Peaks stay at -9.7 / -18 dBFS (no clipping). evidence/20261005-audio-cues/README.md
     static let startCueVolume: Float = 0.9
     static let endCueVolume: Float = 0.45
     private lazy var tick: NSSound? = { let s = NSSound(named: "Tink"); s?.volume = Self.startCueVolume; return s }()
@@ -197,6 +245,7 @@ public final class DictationEngine: DictationEngineProtocol {
             Task { @MainActor in
                 guard let self, self.lifecycle.accepts(generation) else { return }
                 self.checkInputHealth()
+                self.purgeExpiredRecoveries()
                 guard self.active == nil, self.configuration?.localDictationEnabled != true else { return }
                 await self.pipeline?.maintain()
                 guard self.lifecycle.accepts(generation) else { return }
@@ -206,6 +255,7 @@ public final class DictationEngine: DictationEngineProtocol {
         timers = [gateTimer, maintenance]
         timers.forEach { RunLoop.main.add($0, forMode: .common) }
         observeWakeAndUnlock()
+        purgeExpiredRecoveries(force: true)
         if configuration.localDictationEnabled {
             state = .idle
             let local = localTranscriber
@@ -260,8 +310,8 @@ public final class DictationEngine: DictationEngineProtocol {
             }
         }
         if let released = active?.released, uptime() - released > Self.stuckAfterRelease {
-            Log.engine.error("dictation_stuck_cancelled")
-            cancelActive()
+            Log.engine.error("dictation_stuck_timeout")
+            cancelActive(dismissed: false, reason: "stuck_timeout")
         }
         busyWithoutDictation = active == nil && pipeline?.isBusy == true ? busyWithoutDictation + 1 : 0
         if busyWithoutDictation >= 3 {
@@ -283,9 +333,16 @@ public final class DictationEngine: DictationEngineProtocol {
             Task { @MainActor in
                 guard let self, self.lifecycle.accepts(generation) else { return }
                 Log.input.notice("input_reset_after_wake")
-                if case .modifier? = self.active?.origin, self.active?.released == nil { self.cancelActive() }
+                if let a = self.active, case .modifier = a.origin, a.released == nil {
+                    if uptime() - a.beganAt >= Self.chordGraceSeconds {
+                        self.release()
+                    } else {
+                        self.cancelActive(dismissed: false, reason: "wake_reset")
+                    }
+                }
                 self.gate.reset(); self.modifierCandidate = nil; self.heldKeys.reset()
                 self.checkInputHealth()
+                self.refreshSession(reason: "wake")
             }
         }
         let workspace = NSWorkspace.shared.notificationCenter
@@ -294,6 +351,34 @@ public final class DictationEngine: DictationEngineProtocol {
         }
         let distributed = DistributedNotificationCenter.default()
         wakeObservers.append((distributed, distributed.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main, using: reset)))
+        pathMonitor?.cancel()
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let signature = "\(path.status)|" + path.availableInterfaces.map { "\($0.type)" }.joined(separator: ",")
+            Task { @MainActor in
+                guard let self, self.lifecycle.accepts(generation) else { return }
+                defer { self.lastPathSignature = signature }
+                guard let previous = self.lastPathSignature, previous != signature, path.status == .satisfied else { return }
+                self.refreshSession(reason: "network")
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "Sunday Voice network path"))
+        pathMonitor = monitor
+    }
+
+    /// After wake or a network change a pre-warmed session is often dead. Replace it while idle,
+    /// so the next press does not discover that mid-dictation; then retry any saved failures.
+    private func refreshSession(reason: String) {
+        guard lifecycle.isRunning, configuration?.localDictationEnabled != true, let pipeline else { return }
+        Log.engine.notice("session_refresh reason=\(reason, privacy: .public)")
+        let generation = lifecycle.generation
+        Task { [weak self] in
+            guard let self, self.lifecycle.accepts(generation), self.active == nil else { return }
+            pipeline.sessionStale = true
+            await pipeline.maintain()
+            guard self.lifecycle.accepts(generation) else { return }
+            self.scheduleRecoveryOfPendingFailures()
+        }
     }
 
     public func stop() {
@@ -304,6 +389,14 @@ public final class DictationEngine: DictationEngineProtocol {
             try? recovery.seal(id)
             try? recovery.checkpoint(id, error: "engine_stopped")
         }
+        if let inFlight = localTurnInFlight {
+            try? recovery.checkpoint(inFlight.id, error: "engine_stopped")
+        }
+        for queued in localQueue {
+            try? recovery.checkpoint(queued.id, error: "engine_stopped")
+        }
+        localDrainTask?.cancel(); localDrainTask = nil
+        localTurnInFlight = nil; localQueue = []
         active = nil
         gate.reset(); heldKeys.reset(); modifierCandidate = nil; modifierDownAt = nil
         heldHotkey = nil; captureHeld = []; captureTypedKey = false; busyWithoutDictation = 0
@@ -313,6 +406,7 @@ public final class DictationEngine: DictationEngineProtocol {
         watches = []; watchTimer?.invalidate(); watchTimer = nil
         timers.forEach { $0.invalidate() }; timers = []
         wakeObservers.forEach { $0.center.removeObserver($0.token) }; wakeObservers = []
+        pathMonitor?.cancel(); pathMonitor = nil; lastPathSignature = nil
         router?.uninstall(); router = nil
         unregisterHotkeys()
         if let hotkeyHandler { RemoveEventHandler(hotkeyHandler); self.hotkeyHandler = nil }
@@ -362,8 +456,93 @@ public final class DictationEngine: DictationEngineProtocol {
         paster.keepTranscriptOnClipboard = enabled
     }
 
+    public func updateAutoEnterModes(_ modes: Set<DictationMode>, extraAllowedBundleIDs: Set<String> = []) {
+        configuration?.autoEnterModes = modes
+        configuration?.autoEnterExtraBundleIDs = extraAllowedBundleIDs
+    }
+
+    public func updateSendByVoice(enabled: Bool, phrases: [String], allowOtherApps: Bool) {
+        configuration?.sendByVoiceEnabled = enabled
+        configuration?.sendByVoicePhrases = phrases
+        configuration?.sendByVoiceAllApps = allowOtherApps
+    }
+
+    /// Result of applying "Send by voice" (spoken end command) and optional "Press Enter after pasting"
+    /// to a finished dictation (works identically on local WhisperKit and cloud transcripts).
+    struct PreparedDelivery: Equatable {
+        let text: String
+        let autoEnter: Bool
+        let triggeredByVoiceCommand: Bool
+        let allowNonBlockedApps: Bool
+    }
+
+    /// True when optional "Press Enter after pasting" should fire for this turn (non-hands-free,
+    /// non-recovery, enabled for this action, and target app is in the safe chat-app allowlist).
+    func shouldAutoEnter(mode: DictationMode, bundleID: String?, isHandsFree: Bool, isRecovery: Bool) -> Bool {
+        guard !isHandsFree, !isRecovery else { return false }
+        guard let config = configuration, config.autoEnterModes.contains(mode) else { return false }
+        return AutoEnterPolicy.isAllowed(bundleID: bundleID, extraAllowedBundleIDs: config.autoEnterExtraBundleIDs)
+    }
+
+    /// Applies spoken "Send by voice" detection/stripping (when enabled and allowed for the target app)
+    /// and combines it with per-action "Press Enter after pasting" so Return is sent at most once.
+    func prepareDelivery(raw: String, mode: DictationMode, bundleID: String?,
+                         isHandsFree: Bool, isRecovery: Bool) -> PreparedDelivery {
+        guard !isHandsFree, !isRecovery else {
+            return PreparedDelivery(text: raw, autoEnter: false, triggeredByVoiceCommand: false, allowNonBlockedApps: false)
+        }
+        guard let config = configuration else {
+            return PreparedDelivery(text: raw, autoEnter: false, triggeredByVoiceCommand: false, allowNonBlockedApps: false)
+        }
+        if config.sendByVoiceEnabled,
+           AutoEnterPolicy.isAllowed(bundleID: bundleID,
+                                     extraAllowedBundleIDs: config.autoEnterExtraBundleIDs,
+                                     allowNonBlockedApps: config.sendByVoiceAllApps) {
+            let match = EndPhrase.extractSendCommand(from: raw, phrases: config.sendByVoicePhrases)
+            if match.matched {
+                // If both Send by voice and Press Enter after pasting are on, autoEnter stays a single true -> Return sent once.
+                return PreparedDelivery(
+                    text: match.text,
+                    autoEnter: !match.text.isEmpty,
+                    triggeredByVoiceCommand: true,
+                    allowNonBlockedApps: config.sendByVoiceAllApps
+                )
+            }
+        }
+        let autoEnter = shouldAutoEnter(mode: mode, bundleID: bundleID, isHandsFree: false, isRecovery: false)
+        return PreparedDelivery(text: raw, autoEnter: autoEnter, triggeredByVoiceCommand: false, allowNonBlockedApps: false)
+    }
+
+    /// Testable decision helper invoked right after paste verification completes.
+    @discardableResult
+    func performAutoEnterIfSafe(mode: DictationMode, targetBundleID: String?, targetPID: pid_t?,
+                                check: Paster.Check, autoEnter: Bool, allowNonBlockedApps: Bool = false) -> Bool {
+        guard autoEnter else { return false }
+        guard check != .failed else {
+            Log.paste.info("auto_enter_skipped reason=paste_failed")
+            return false
+        }
+        guard active == nil else {
+            Log.paste.info("auto_enter_skipped reason=recording_active")
+            return false
+        }
+        if let targetPID, frontmostPIDProvider() != targetPID {
+            Log.paste.info("auto_enter_skipped reason=focus_changed")
+            return false
+        }
+        guard AutoEnterPolicy.isAllowed(bundleID: targetBundleID,
+                                        extraAllowedBundleIDs: configuration?.autoEnterExtraBundleIDs ?? [],
+                                        allowNonBlockedApps: allowNonBlockedApps) else {
+            Log.paste.info("auto_enter_skipped reason=app_not_allowed")
+            return false
+        }
+        postReturnKey()
+        Log.paste.notice("auto_enter_sent mode=\(mode.rawValue, privacy: .public) app=\(targetBundleID ?? "nil", privacy: .public) check=\(check == .confirmed ? "confirmed" : "unconfirmed", privacy: .public)")
+        return true
+    }
+
     public func discardRecoveryAudio() throws {
-        guard active == nil, pipeline?.isBusy != true else { throw FailureCode("dictation_busy") }
+        guard active == nil, localTurnInFlight == nil, localQueue.isEmpty, pipeline?.isBusy != true else { throw FailureCode("dictation_busy") }
         try recovery.discardAll()
     }
 
@@ -399,13 +578,19 @@ public final class DictationEngine: DictationEngineProtocol {
     /// Start a dictation without a held key, into the field focused right now. Returns false if busy.
     /// `expectedBundleID`: refuse unless that app is frontmost right now, so a focus race can never
     /// paste (or press Return) into whatever app the user switched to.
-    @discardableResult public func beginHandsFree(mode: DictationMode, expectedBundleID: String? = nil) -> Bool {
+    /// `cursorOnly`: true for public Vocal Shortcuts hands-free at the current cursor (uses standard
+    /// safe paste + Send by voice / AutoEnterPolicy rather than private target refocusing).
+    @discardableResult public func beginHandsFree(mode: DictationMode, expectedBundleID: String? = nil, cursorOnly: Bool = false) -> Bool {
         if let expectedBundleID, NSWorkspace.shared.frontmostApplication?.bundleIdentifier != expectedBundleID {
             Log.engine.notice("handsfree_refused_focus_changed"); return false
         }
-        if !handsFreePromptHint.isEmpty { pipeline?.turnPromptSuffix = handsFreePromptHint }
+        if !cursorOnly && !handsFreePromptHint.isEmpty { pipeline?.turnPromptSuffix = handsFreePromptHint }
         begin(mode: mode, origin: .handsFree, pressAt: uptime())
-        if active?.origin != .handsFree { pipeline?.turnPromptSuffix = "" }
+        if active?.origin == .handsFree {
+            active?.cursorHandsFree = cursorOnly
+        } else {
+            pipeline?.turnPromptSuffix = ""
+        }
         return active?.origin == .handsFree
     }
 
@@ -557,9 +742,9 @@ public final class DictationEngine: DictationEngineProtocol {
     private func inputEvent(_ type: CGEventType, _ event: CGEvent) {
         guard lifecycle.isRunning else { return }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if case .modifier? = active?.origin { cancelActive() }
-            Log.input.notice("tap_disabled reason=\(type == .tapDisabledByTimeout ? "timeout" : "user_input", privacy: .public)")
-            gate.reset(); modifierCandidate = nil; heldKeys.reset(); return
+            let reason = type == .tapDisabledByTimeout ? "timeout" : "user_input"
+            handleTapDisabled(reason: reason, liveFlags: CGEventSource.flagsState(.combinedSessionState))
+            return
         }
         if type == .flagsChanged {
             heldKeys.flagsChanged(code: event.getIntegerValueField(.keyboardEventKeycode), flags: event.flags)
@@ -573,15 +758,20 @@ public final class DictationEngine: DictationEngineProtocol {
             modifiersChanged(at: Self.eventTime(event))
         case .keyDown:
             let code = event.getIntegerValueField(.keyboardEventKeycode)
-            heldKeys.keyDown(code, at: uptime()); perform(gate.interfere())
-            if code == 53 { escape() } // Esc also reaches the frontmost app.
+            heldKeys.keyDown(code, at: uptime())
+            if code == 53 {
+                gate.reset(); modifierCandidate = nil
+                escape() // Esc also reaches the frontmost app.
+            } else {
+                handleTypingKeyDown()
+            }
         case .keyUp:
             heldKeys.keyUp(event.getIntegerValueField(.keyboardEventKeycode))
         case .leftMouseDown, .rightMouseDown, .scrollWheel:
-            perform(gate.interfere())
+            handlePointerInterference()
         case .otherMouseDown, .otherMouseUp:
             let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
-            guard let mode = mouseMode(button) else { perform(gate.interfere()); break }
+            guard let mode = mouseMode(button) else { handlePointerInterference(); break }
             if type == .otherMouseDown, heldModifiers.isEmpty {
                 if canStart { begin(mode: mode, origin: .mouse(button), pressAt: Self.eventTime(event)) }
             } else if type == .otherMouseUp, active?.origin == .mouse(button) {
@@ -591,15 +781,58 @@ public final class DictationEngine: DictationEngineProtocol {
         }
     }
 
+    /// Brief tap-disabled events must NEVER cancel a released/processing turn or discard live speech.
+    /// If the trigger modifier is still physically held, keep recording; if it was released while the
+    /// tap was disabled, finish (`release()`) so all recorded speech is transcribed.
+    func handleTapDisabled(reason: String, liveFlags: CGEventFlags) {
+        Log.input.notice("tap_disabled reason=\(reason, privacy: .public)")
+        heldKeys.resync(flags: liveFlags)
+        if let a = active, a.released == nil, case .modifier(let index) = a.origin, index < modifierTriggers.count {
+            let keys = modifierTriggers[index].keys
+            let stillHeld = keys.allSatisfy { key in
+                switch key {
+                case .fn: return liveFlags.contains(.maskSecondaryFn)
+                case .control: return liveFlags.contains(.maskControl)
+                case .option, .rightOption: return liveFlags.contains(.maskAlternate)
+                case .command, .rightCommand: return liveFlags.contains(.maskCommand)
+                case .shift: return liveFlags.contains(.maskShift)
+                }
+            }
+            if stillHeld {
+                return
+            }
+            gate.reset(); modifierCandidate = nil; heldKeys.reset()
+            release()
+            return
+        }
+        gate.reset(); modifierCandidate = nil; heldKeys.reset()
+    }
+
+    /// Mouse clicks and scroll wheel block starting a modifier hold (e.g. Control+Scroll zoom),
+    /// but NEVER cancel a dictation that has already started.
+    func handlePointerInterference() {
+        gate.blockBeforeStart()
+    }
+
+    /// A typing key pressed before the hold delay (or within `chordGraceSeconds` of start, e.g. slow Ctrl+C)
+    /// cancels the shortcut chord; once the user is speaking past the grace window, stray key brushes
+    /// never silently cancel the active recording.
+    func handleTypingKeyDown() {
+        if let a = active, a.released == nil, case .modifier = a.origin,
+           uptime() - a.beganAt >= Self.chordGraceSeconds {
+            gate.blockBeforeStart()
+            return
+        }
+        perform(gate.interfere())
+    }
+
     private func modifiersChanged(at time: Double) {
         let held = heldModifiers
         let triggers = modifierTriggers
-        if case .modifier(let index)? = active?.origin, active?.released == nil, index < triggers.count {
+        if let a = active, case .modifier(let index) = a.origin, a.released == nil, index < triggers.count {
             let keys = triggers[index].keys
             if Self.matches(keys, held: held) { return }
-            // Letting go of any part of the combo ends the dictation; adding another modifier is a chord → cancel.
-            let groups = { (s: Set<ModifierKey>) in Set(s.map { $0 == .rightOption ? .option : $0 == .rightCommand ? .command : $0 }) }
-            if groups(held).isSubset(of: groups(keys)) { gate.reset(); modifierCandidate = nil; release() } else { gate.reset(); modifierCandidate = nil; cancelActive() }
+            handleActiveModifierChange(held: held, triggerKeys: keys, activeTurn: a)
             return
         }
         let match = triggers.firstIndex { Self.matches($0.keys, held: held) }
@@ -618,6 +851,22 @@ public final class DictationEngine: DictationEngineProtocol {
         }
     }
 
+    /// Letting go of any part of the trigger ends and transcribes the dictation. Adding an extra modifier
+    /// inside `chordGraceSeconds` cancels as a shortcut chord; once speaking past the grace window,
+    /// finishing (`release()`) preserves and transcribes everything spoken so far instead of cancelling.
+    private func handleActiveModifierChange(held: Set<ModifierKey>, triggerKeys: Set<ModifierKey>, activeTurn: Active) {
+        let groups = { (s: Set<ModifierKey>) in Set(s.map { $0 == .rightOption ? .option : $0 == .rightCommand ? .command : $0 }) }
+        gate.reset(); modifierCandidate = nil
+        if groups(held).isSubset(of: groups(triggerKeys)) {
+            release()
+        } else if uptime() - activeTurn.beganAt >= Self.chordGraceSeconds {
+            Log.input.notice("modifier_chord_finished_active_turn")
+            release()
+        } else {
+            cancelActive(dismissed: false, reason: "modifier_chord")
+        }
+    }
+
     private func perform(_ action: ControlGate.Action) {
         guard lifecycle.isRunning else { return }
         switch action {
@@ -629,7 +878,7 @@ public final class DictationEngine: DictationEngineProtocol {
         case .stop:
             if case .modifier? = active?.origin { release() }
         case .cancel:
-            if case .modifier? = active?.origin, active?.released == nil { cancelActive() }
+            if case .modifier? = active?.origin, active?.released == nil { cancelActive(dismissed: false, reason: "key_chord") }
         case .none: break
         }
     }
@@ -728,7 +977,12 @@ public final class DictationEngine: DictationEngineProtocol {
     private var micAllowed: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
 
     private var canStart: Bool {
-        guard lifecycle.isRunning, active == nil, pipeline?.isBusy != true else { return false }
+        guard lifecycle.isRunning else { return false }
+        if active?.origin == .recovery { return true } // begin() preempts it
+        guard active == nil, pipeline?.isBusy != true else { return false }
+        if localTurnInFlight != nil || !localQueue.isEmpty {
+            return configuration?.localDictationEnabled == true
+        }
         switch state { case .preparing, .listening, .processing: return false; default: return true }
     }
 
@@ -736,10 +990,37 @@ public final class DictationEngine: DictationEngineProtocol {
         begin(mode: mode, origin: .manual, pressAt: pressAt)
     }
 
+    func beginModifierForTesting(triggerIndex: Int = 0, mode: DictationMode = .bilingual, beganAgo: Double = 0) {
+        let now = uptime()
+        _ = gate.modifiers(control: true, other: false, keysDown: false, now: now - 1, delay: 0.18)
+        _ = gate.poll(now: now)
+        modifierCandidate = triggerIndex
+        begin(mode: mode, origin: .modifier(triggerIndex), pressAt: now - beganAgo)
+        if beganAgo > 0, var a = active {
+            a = Active(id: a.id, mode: a.mode, origin: a.origin, target: a.target, pressAt: now - beganAgo,
+                       beganAt: now - beganAgo, screenTerms: a.screenTerms, localMode: a.localMode)
+            active = a
+        }
+    }
+
+    func simulateActiveModifierChangeForTesting(held: Set<ModifierKey>) {
+        let triggers = modifierTriggers
+        guard let a = active, case .modifier(let index) = a.origin, a.released == nil, index < triggers.count else { return }
+        handleActiveModifierChange(held: held, triggerKeys: triggers[index].keys, activeTurn: a)
+    }
+
+    func waitForLocalQueueForTesting() async {
+        while let task = localDrainTask {
+            await task.value
+            await Task.yield()
+        }
+    }
+
     func releaseForTesting() { release() }
-    func cancelForTesting() { cancelActive() }
+    func cancelForTesting() { cancelActive(dismissed: false, reason: "test") }
 
     private func begin(mode: DictationMode, origin: Origin, pressAt: Double) {
+        if let a = active, a.origin == .recovery { preemptRecovery(a) }
         guard canStart, let pipeline, let configuration else { return }
         let generation = lifecycle.generation
         let beganAt = uptime()
@@ -751,15 +1032,15 @@ public final class DictationEngine: DictationEngineProtocol {
         mic.warm(keepAlive: 20)
         let id = UUID().uuidString
         let target = fixtureTarget ?? paster.captureTarget()
-        let screenTerms = fixtureTarget == nil ? ScreenContext.capture(target: target, enabled: configuration.useScreenContext) : []
         let isLocal = configuration.localDictationEnabled
+        let useScreenContext = configuration.useScreenContext
         do { try recovery.begin(id: id, mode: mode, appName: target.app?.localizedName, bundleID: target.bundleID) }
         catch { mic.endStreaming(keepAlive: 0); fail(.server("local_storage_unavailable")); return }
         onRecordingNotice?(nil)
         active = Active(id: id, mode: mode, origin: origin, target: target, pressAt: pressAt, beganAt: beganAt,
-                        screenTerms: screenTerms, localMode: isLocal)
+                        screenTerms: [], localMode: isLocal)
         if !isLocal {
-            pipeline.prepare(id: id, mode: mode, app: target.bundleID, screenTerms: screenTerms)
+            pipeline.prepare(id: id, mode: mode, app: target.bundleID, screenTerms: [])
         }
         let once = Once()
         let since = Self.preRollStart(pressAt: pressAt, lead: configuration.prerollLeadSeconds, endCueAudibleUntil: endCueAudibleUntil)
@@ -806,15 +1087,27 @@ public final class DictationEngine: DictationEngineProtocol {
         if !isLocal {
             Task { [weak self] in
                 guard let self, self.lifecycle.accepts(generation), self.active?.id == id else { return }
+                let capturedTerms: [String]
                 if self.fixtureTarget == nil {
-                    // Check in-place corrections asynchronously before prompt/context assembly so AX never stalls listening.
+                    // Capture AX screen terms and in-place corrections asynchronously after mic streaming starts
+                    // so slow Electron apps never stall press-to-capture.
+                    capturedTerms = ScreenContext.capture(target: target, enabled: useScreenContext)
+                    self.active?.screenTerms = capturedTerms
                     self.checkCorrections(onlyPid: target.app?.processIdentifier ?? -1)
                     guard self.lifecycle.accepts(generation), self.active?.id == id else { return }
+                } else {
+                    capturedTerms = []
                 }
-                await pipeline.start(id: id, mode: mode, app: target.bundleID, screenTerms: screenTerms)
+                await pipeline.start(id: id, mode: mode, app: target.bundleID, screenTerms: capturedTerms)
             }
         } else {
             active?.started = true
+            if fixtureTarget == nil, useScreenContext {
+                Task { [weak self] in
+                    guard let self, self.lifecycle.accepts(generation), self.active?.id == id else { return }
+                    self.active?.screenTerms = ScreenContext.capture(target: target, enabled: true)
+                }
+            }
         }
     }
 
@@ -837,21 +1130,104 @@ public final class DictationEngine: DictationEngineProtocol {
     }
 
     public func retryTranscription(id: String) async {
-        guard canStart, let pipeline, let r = recoveryRecords.first(where: { $0.id == id }),
+        await replaySaved(id: id, origin: .manual, target: Paster.Target(app: nil, element: nil))
+    }
+
+    /// Re-transcribe a saved dictation through the normal path. A manual retry copies its result;
+    /// a background recovery goes to the original field if it still has focus, else the clipboard.
+    private func replaySaved(id: String, origin: Origin, target: Paster.Target) async {
+        guard canStart, active?.origin != .recovery || origin == .recovery, let r = recoveryRecords.first(where: { $0.id == id }),
               !r.complete, let pcm = try? Data(contentsOf: recovery.audioURL(id)), !pcm.isEmpty else { return }
-        // A retry is explicit and copies its result; it never types into a newly focused document.
-        active = Active(id: id, mode: r.mode, origin: .manual, target: Paster.Target(app: nil, element: nil), pressAt: uptime())
+        if let a = active, a.origin == .recovery { preemptRecovery(a) }
+        if configuration?.localDictationEnabled == true {
+            let turn = LocalPendingTurn(
+                id: id, mode: r.mode, origin: origin, target: target, released: uptime(),
+                submit: false, cursorHandsFree: false, screenTerms: [], localAudio: pcm, sink: nil
+            )
+            onRecordingNotice?(.retrying)
+            enqueueLocalTurn(turn)
+            await localDrainTask?.value
+            return
+        }
+        guard let pipeline else { return }
+        active = Active(id: id, mode: r.mode, origin: origin, target: target, pressAt: uptime())
         onRecordingNotice?(.retrying)
         state = .processing(r.mode)
         await pipeline.start(id: id, mode: r.mode, app: r.bundleID)
+        // The relay accepts a 30-second head start: send the first 25 s at once, then in real time.
         var offset = 0
+        let burst = 25 * 48_000
         while offset < pcm.count, active?.id == id, !Task.isCancelled {
             let end = min(offset + 4800, pcm.count)
             pipeline.audio(pcm.subdata(in: offset..<end)); offset = end
-            try? await Task.sleep(nanoseconds: 50_000_000)
+            if offset > burst { try? await Task.sleep(nanoseconds: 100_000_000) } else { await Task.yield() }
         }
         guard active?.id == id else { return }
         active?.released = uptime(); pipeline.stop()
+    }
+
+    /// Codes worth retrying in the background. Too-short, cancelled and account errors are not.
+    static func isAutoRecoverable(_ code: String) -> Bool {
+        let final = ["no_speech", "recording_too_short", "cancelled", "subscription_required", "not_signed_in",
+                     "quota_exceeded", "consent_required", "not_invited", "audio_too_long", "engine_stopped"]
+        return !final.contains { code.contains($0) }
+    }
+
+    private func scheduleAutoRecovery(_ id: String, delay: Double) {
+        guard configuration?.localDictationEnabled != true, server != nil, recoveryAttempts[id, default: 0] < 3 else { return }
+        let generation = lifecycle.generation
+        after(delay) { [weak self] in
+            guard let self, self.lifecycle.accepts(generation) else { return }
+            Task { await self.autoRecover(id) }
+        }
+    }
+
+    private func autoRecover(_ id: String) async {
+        guard lifecycle.isRunning, configuration?.localDictationEnabled != true else { return }
+        guard active == nil, pipeline?.isBusy != true, state == .idle || { if case .held = state { return true }; if case .failed = state { return true }; return false }() else {
+            // The user is dictating: try again shortly (bounded).
+            recoveryDeferrals[id, default: 0] += 1
+            if recoveryDeferrals[id, default: 0] < 40 { scheduleAutoRecovery(id, delay: 6) }
+            return
+        }
+        guard recoveryRecords.contains(where: { $0.id == id && !$0.complete && $0.audioBytes > 0 }) else {
+            recoveryTargets[id] = nil; recoveryAttempts[id] = nil; recoveryDeferrals[id] = nil; return
+        }
+        recoveryAttempts[id, default: 0] += 1
+        Log.engine.notice("recovery_attempt n=\(self.recoveryAttempts[id, default: 0], privacy: .public)")
+        await replaySaved(id: id, origin: .recovery, target: recoveryTargets[id] ?? Paster.Target(app: nil, element: nil))
+    }
+
+    /// After reconnecting (wake, network), retry failures saved in the last hour that are still pending.
+    private func scheduleRecoveryOfPendingFailures() {
+        let cutoff = Date().addingTimeInterval(-3600)
+        for r in recoveryRecords where !r.complete && r.audioBytes >= 4800 && r.startedAt > cutoff
+            && Self.isAutoRecoverable(r.errorCode ?? "") && recoveryAttempts[r.id, default: 0] < 3 {
+            scheduleAutoRecovery(r.id, delay: 1.5)
+        }
+    }
+
+    /// A key press wins over background recovery: drop that turn (its audio stays saved) and retry later.
+    private func preemptRecovery(_ a: Active) {
+        Log.engine.notice("recovery_preempted")
+        pipeline?.dropTurn()
+        active = nil
+        if case .processing = state { state = .idle }
+        onRecordingNotice?(nil)
+        scheduleAutoRecovery(a.id, delay: 8)
+    }
+
+    /// Delete saved audio older than the retention window (never a live or queued recording). Hourly.
+    private func purgeExpiredRecoveries(force: Bool = false) {
+        let now = uptime()
+        guard force || now - lastRecoveryPurge > 3600 else { return }
+        lastRecoveryPurge = now
+        var keep = Set<String>()
+        if let id = active?.id { keep.insert(id) }
+        if let id = localTurnInFlight?.id { keep.insert(id) }
+        for item in localQueue { keep.insert(item.id) }
+        let removed = recovery.purgeExpired(olderThan: Self.recoveryRetention, keep: keep)
+        if removed > 0 { Log.engine.notice("recovery_expired count=\(removed, privacy: .public)") }
     }
 
     private func announceListening() {
@@ -876,63 +1252,142 @@ public final class DictationEngine: DictationEngineProtocol {
         // syllable could be journaled but omitted from STT when a key-up/cap wins the main queue.
         DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated {
             guard let self, self.active?.id == a.id else { return }
-            self.active?.released = uptime()
+            let releasedAt = uptime()
+            self.active?.released = releasedAt
             do { try self.recovery.seal(a.id) }
             catch { self.onRecordingNotice?(.saveFailed) }
             self.playEndCue(a.cued)
             self.onRecordingNotice?(nil)
-            self.onDiagnostic?(DiagnosticEvent("dictation_stop", turnID: a.id, durationMS: (uptime() - a.pressAt) * 1000))
-            self.state = .processing(a.mode)
+            self.onDiagnostic?(DiagnosticEvent("dictation_stop", turnID: a.id, durationMS: (releasedAt - a.pressAt) * 1000))
             if let current = self.active, current.localMode {
-                let generation = self.lifecycle.generation
-                Task { [weak self] in
-                    guard let self, self.lifecycle.accepts(generation) else { return }
-                    await self.finishLocalDictation(current)
-                }
+                let diskAudio = (try? Data(contentsOf: self.recovery.audioURL(current.id))) ?? Data()
+                let pcm = diskAudio.count > current.localAudio.count ? diskAudio : current.localAudio
+                let turn = LocalPendingTurn(
+                    id: current.id,
+                    mode: current.mode,
+                    origin: current.origin,
+                    target: current.target,
+                    released: releasedAt,
+                    submit: current.submit,
+                    cursorHandsFree: current.cursorHandsFree,
+                    screenTerms: current.screenTerms,
+                    localAudio: pcm,
+                    sink: current.sink
+                )
+                // Clear `active` immediately so a new recording can begin right away and no
+                // subsequent input/tap/modifier event can ever cancel this finished local turn.
+                self.active = nil
+                self.enqueueLocalTurn(turn)
             } else {
-                self.pipeline?.stop(releasedAt: self.active?.released ?? uptime())
+                self.state = .processing(a.mode)
+                self.pipeline?.stop(releasedAt: releasedAt)
             }
         } }
     }
 
+    /// Enqueues a released local turn for serialized FIFO offline transcription.
+    private func enqueueLocalTurn(_ turn: LocalPendingTurn) {
+        localQueue.append(turn)
+        if active == nil {
+            state = .processing(turn.mode)
+        }
+        guard localDrainTask == nil else { return }
+        let generation = lifecycle.generation
+        localDrainTask = Task { [weak self] in
+            await self?.drainLocalQueue(generation: generation)
+        }
+    }
+
+    private func drainLocalQueue(generation: UInt64) async {
+        defer { localDrainTask = nil; localTurnInFlight = nil }
+        while lifecycle.accepts(generation), !localQueue.isEmpty {
+            let turn = localQueue.removeFirst()
+            localTurnInFlight = turn
+            if active == nil {
+                state = .processing(turn.mode)
+            }
+            await finishLocalDictation(turn)
+            localTurnInFlight = nil
+        }
+    }
+
     /// Free Local Mode offline transcription: WhisperKit large-v3-turbo (or pluggable MLX backend)
     /// + local AX screen terms (`promptTokens`) + personal replacement map. Zero external APIs.
-    private func finishLocalDictation(_ a: Active) async {
-        let released = a.released ?? uptime()
-        guard a.localAudio.count >= 4800 else {
-            active = nil; fail(.tooShort); return
+    private func finishLocalDictation(_ turn: LocalPendingTurn) async {
+        let released = turn.released
+        let audioBytes = turn.localAudio.count
+        let audioSeconds = Double(audioBytes) / 48_000
+        let userRecordingNext = { self.active != nil }
+
+        guard audioBytes >= 4800 else {
+            try? recovery.checkpoint(turn.id, error: FailureCode.tooShort.code, complete: true)
+            try? recovery.retireCompleted(turn.id)
+            if !userRecordingNext() && localQueue.isEmpty { fail(.tooShort) }
+            return
         }
         guard let transcriber = localTranscriber, transcriber.isReady else {
-            active = nil; fail(.server("local_model_missing")); return
+            try? recovery.checkpoint(turn.id, error: "local_model_missing")
+            onDiagnostic?(DiagnosticEvent("dictation_fail", turnID: turn.id, durationMS: audioSeconds * 1000, errorCode: "local_model_missing"))
+            if !userRecordingNext() { fail(.server("local_model_missing")) }
+            return
         }
-        let promptTerms = a.screenTerms + localDictionary.promptTerms()
+        let promptTerms = turn.screenTerms + localDictionary.promptTerms()
         do {
-            let raw = try await transcriber.transcribe(pcm24kMono: a.localAudio, mode: a.mode, promptTerms: promptTerms)
-            guard active?.id == a.id else { return }
+            let raw = try await transcriber.transcribe(pcm24kMono: turn.localAudio, mode: turn.mode, promptTerms: promptTerms)
+            guard !Task.isCancelled else { return }
             let cleaned = localDictionary.apply(to: raw)
             guard !cleaned.isEmpty else {
-                active = nil; fail(.noSpeech); return
+                if audioBytes >= Self.substantialAudioBytes {
+                    try? recovery.checkpoint(turn.id, error: "local_empty_transcript")
+                    onDiagnostic?(DiagnosticEvent("dictation_fail", turnID: turn.id, durationMS: audioSeconds * 1000, errorCode: "local_empty_transcript"))
+                    Log.engine.error("local_dictation_empty backend=\(transcriber.backendID, privacy: .public) audio_s=\(audioSeconds, privacy: .public)")
+                    onRecordingNotice?(.recoveryAvailable)
+                    if !userRecordingNext() { fail(.server("local_empty_saved")) }
+                } else {
+                    try? recovery.checkpoint(turn.id, error: FailureCode.noSpeech.code, complete: true)
+                    try? recovery.retireCompleted(turn.id)
+                    Log.engine.info("local_dictation_no_speech backend=\(transcriber.backendID, privacy: .public) audio_s=\(audioSeconds, privacy: .public)")
+                    if !userRecordingNext() && localQueue.isEmpty { fail(.noSpeech) }
+                }
+                return
             }
             let latencyMs = ms(uptime() - released)
-            let audioSeconds = Double(a.localAudio.count) / 48_000
-            try? recovery.checkpoint(a.id, raw: raw)
-            try? recovery.checkpoint(a.id, final: cleaned, complete: false)
-            completeAudio[a.id] = true
-            onDiagnostic?(DiagnosticEvent("dictation_success", turnID: a.id, durationMS: audioSeconds * 1000, latencyMS: latencyMs))
-            recent.record(id: a.id, transcript: raw, output: cleaned, mode: a.mode, app: a.target.bundleID)
-            active = nil
+            try? recovery.checkpoint(turn.id, raw: raw)
+            try? recovery.checkpoint(turn.id, final: cleaned, complete: false)
+            completeAudio[turn.id] = true
+            onDiagnostic?(DiagnosticEvent("dictation_success", turnID: turn.id, durationMS: audioSeconds * 1000, latencyMS: latencyMs))
+            recent.record(id: turn.id, transcript: raw, output: cleaned, mode: turn.mode, app: turn.target.bundleID)
             lastResult = cleaned
-            let submit = (a.submit || (a.origin == .handsFree && EndPhrase.endsWithPhrase(cleaned))) && (a.origin != .handsFree || handsFreeSubmitAllowed)
-            if let sink = a.sink { sink(EndPhrase.strip(cleaned), latencyMs, submit); state = .idle; return }
-            deliver(cleaned, to: a.target, id: a.id, mode: a.mode, handsFree: a.origin == .handsFree, submit: submit)
+            onRecordingNotice?(nil)
+            let isTargetHandsFree = turn.origin == .handsFree && !turn.cursorHandsFree
+            let submit = (turn.submit || (isTargetHandsFree && EndPhrase.endsWithPhrase(cleaned))) && (!isTargetHandsFree || handsFreeSubmitAllowed)
+            if let sink = turn.sink {
+                sink(EndPhrase.strip(cleaned), latencyMs, submit)
+                if !userRecordingNext() && localQueue.isEmpty { state = .idle }
+                return
+            }
+            let prepared = prepareDelivery(raw: cleaned, mode: turn.mode, bundleID: turn.target.bundleID,
+                                           isHandsFree: isTargetHandsFree, isRecovery: turn.origin == .recovery)
+            if prepared.triggeredByVoiceCommand && prepared.text.isEmpty {
+                try? recovery.checkpoint(turn.id, complete: true)
+                try? recovery.retireCompleted(turn.id)
+                if !userRecordingNext() && localQueue.isEmpty { state = .idle }
+                Log.engine.info("send_by_voice_empty_after_strip")
+                return
+            }
+            let deliverText = prepared.triggeredByVoiceCommand ? prepared.text : cleaned
+            if prepared.triggeredByVoiceCommand { lastResult = deliverText }
+            deliver(deliverText, to: turn.target, id: turn.id, mode: turn.mode, handsFree: isTargetHandsFree,
+                    submit: submit, autoEnter: prepared.autoEnter, allowNonBlockedApps: prepared.allowNonBlockedApps,
+                    preserveActiveHUD: userRecordingNext())
             Log.engine.info("local_result backend=\(transcriber.backendID, privacy: .public) release_to_ready_ms=\(latencyMs, privacy: .public) audio_s=\(audioSeconds, privacy: .public)")
         } catch {
-            guard active?.id == a.id else { return }
-            try? recovery.checkpoint(a.id, error: "local_transcription_failed")
-            active = nil
+            guard !Task.isCancelled else { return }
+            try? recovery.checkpoint(turn.id, error: "local_transcription_failed")
+            onDiagnostic?(DiagnosticEvent("dictation_fail", turnID: turn.id, durationMS: audioSeconds * 1000, errorCode: "local_transcription_failed"))
             onRecordingNotice?(.recoveryAvailable)
-            Log.engine.error("local_dictation_error backend=\(transcriber.backendID, privacy: .public)")
-            fail(.server("audio_saved"))
+            Log.engine.error("local_dictation_error backend=\(transcriber.backendID, privacy: .public) err=\(String(describing: type(of: error)), privacy: .public)")
+            if !userRecordingNext() { fail(.server("audio_saved")) }
         }
     }
 
@@ -951,15 +1406,32 @@ public final class DictationEngine: DictationEngineProtocol {
         max(pressAt - lead, endCueAudibleUntil)
     }
 
-    private func cancelActive() {
-        guard lifecycle.isRunning, active != nil else { return }
+    /// `dismissed`: the user explicitly pressed Esc, so the recording is retired.
+    /// Any involuntary interruption with substantial audio (>= 1.5 s) keeps the sealed audio on disk
+    /// and shows a clear HUD error with one-click Retry — a spoken turn is never silently lost.
+    private func cancelActive(dismissed: Bool = false, reason: String = "unspecified") {
+        guard lifecycle.isRunning, let current = active else { return }
         let generation = lifecycle.generation
-        let id = active!.id
+        let id = current.id
         mic.endStreaming(keepAlive: 20)
-        try? recovery.seal(id); try? recovery.checkpoint(id, error: "cancelled")
+        try? recovery.seal(id)
+        let bytes = max(current.localAudio.count, recoveryRecords.first(where: { $0.id == id })?.audioBytes ?? 0)
+        let errorTag = dismissed ? "cancelled_escape" : "cancelled_\(reason)"
+        try? recovery.checkpoint(id, error: errorTag)
+        Log.engine.notice("dictation_cancelled reason=\(reason, privacy: .public) dismissed=\(dismissed, privacy: .public) audio_bytes=\(bytes, privacy: .public)")
+        let keepWithRetry = !dismissed && bytes >= Self.substantialAudioBytes
+        if !keepWithRetry {
+            try? recovery.checkpoint(id, complete: true); try? recovery.retireCompleted(id)
+        }
         active = nil
         levelTimer?.invalidate(); maxRecordingTimer?.invalidate(); recordingWarningTimer?.invalidate()
-        state = .idle
+        if keepWithRetry {
+            onDiagnostic?(DiagnosticEvent("dictation_fail", turnID: id, durationMS: Double(bytes) / 48.0, errorCode: errorTag))
+            onRecordingNotice?(.recoveryAvailable)
+            fail(.server("interrupted_saved"))
+        } else if localTurnInFlight == nil && localQueue.isEmpty {
+            state = .idle
+        }
         Task { [weak self] in
             guard let self, self.lifecycle.accepts(generation) else { return }
             await self.pipeline?.cancel()
@@ -968,7 +1440,9 @@ public final class DictationEngine: DictationEngineProtocol {
 
     private func escape() {
         switch state {
-        case .preparing, .listening, .processing: cancelActive()
+        case .preparing, .listening: cancelActive(dismissed: true, reason: "escape")
+        case .processing:
+            if active != nil { cancelActive(dismissed: true, reason: "escape") }
         case .held, .failed: state = .idle
         default: break
         }
@@ -986,6 +1460,8 @@ public final class DictationEngine: DictationEngineProtocol {
             guard active?.id == id else { return }
             do { try recovery.checkpoint(id, raw: text) }
             catch { onRecordingNotice?(.saveFailed) }
+        case .retrying(_, let code):
+            Log.engine.notice("dictation_session_retry code=\(code, privacy: .public)")
         case .degraded(let id, let code):
             guard active?.id == id else { return }
             try? recovery.checkpoint(id, error: code)
@@ -1002,13 +1478,28 @@ public final class DictationEngine: DictationEngineProtocol {
             active = nil
             lastResult = text
             // The final transcript ending in an end phrase also means "send" (the on-device listener can miss it).
-            let submit = (a.submit || (a.origin == .handsFree && EndPhrase.endsWithPhrase(text))) && (a.origin != .handsFree || handsFreeSubmitAllowed)
+            let isTargetHandsFree = a.origin == .handsFree && !a.cursorHandsFree
+            let submit = (a.submit || (isTargetHandsFree && EndPhrase.endsWithPhrase(text))) && (!isTargetHandsFree || handsFreeSubmitAllowed)
             if let sink = a.sink { sink(EndPhrase.strip(text), stats.releaseToReadyMs, submit); state = .idle; return }
-            deliver(text, to: a.target, id: id, mode: a.mode, handsFree: a.origin == .handsFree, submit: submit)
-            Log.engine.info("result mode=\(stats.mode.rawValue, privacy: .public) release_to_ready_ms=\(stats.releaseToReadyMs, privacy: .public) release_to_stt_final_ms=\(stats.releaseToSTTFinalMs, privacy: .public) fallbacks=\(stats.fallbacks, privacy: .public)")
-            if !stats.audioComplete {
-                after(0.6) { if self.active == nil { self.fail(.server("audio_partial_saved")) } }
+            let prepared = prepareDelivery(raw: text, mode: a.mode, bundleID: a.target.bundleID,
+                                           isHandsFree: isTargetHandsFree, isRecovery: a.origin == .recovery)
+            if prepared.triggeredByVoiceCommand && prepared.text.isEmpty {
+                try? recovery.checkpoint(id, complete: true)
+                try? recovery.retireCompleted(id)
+                state = .idle
+                Log.engine.info("send_by_voice_empty_after_strip")
+            } else {
+                let deliverText = prepared.triggeredByVoiceCommand ? prepared.text : text
+                if prepared.triggeredByVoiceCommand { lastResult = deliverText }
+                deliver(deliverText, to: a.target, id: id, mode: a.mode, handsFree: isTargetHandsFree,
+                        submit: submit, autoEnter: prepared.autoEnter, allowNonBlockedApps: prepared.allowNonBlockedApps)
             }
+            if a.origin == .recovery {
+                Log.engine.notice("recovery_delivered held=\(self.state.isHeld, privacy: .public)")
+                onRecordingNotice?(state.isHeld ? .recoveredHeld : nil)
+            }
+            Log.engine.info("result mode=\(stats.mode.rawValue, privacy: .public) release_to_ready_ms=\(stats.releaseToReadyMs, privacy: .public) release_to_stt_final_ms=\(stats.releaseToSTTFinalMs, privacy: .public) fallbacks=\(stats.fallbacks, privacy: .public)")
+            recoveryTargets[id] = nil; recoveryAttempts[id] = nil; recoveryDeferrals[id] = nil
             let seconds = stats.audioSeconds
             Task { await self.server?.reportUsage(audioSeconds: seconds, dictations: 1) }
             let generation = lifecycle.generation
@@ -1021,16 +1512,90 @@ public final class DictationEngine: DictationEngineProtocol {
         case .error(let id, let code):
             onDiagnostic?(DiagnosticEvent("dictation_fail", turnID: id, errorCode: code))
             guard active?.id == id else { return }
+            let isSubscription = code == "subscription_required" || code == "STT_subscription_required"
             mic.endStreaming(keepAlive: 20)
-            try? recovery.seal(id); try? recovery.checkpoint(id, error: code)
+            let wasRecovery = active?.origin == .recovery
+            let target = active?.target
+            let tooShort = code == FailureCode.tooShort.code
+            if isSubscription {
+                try? recovery.seal(id)
+                // Never leave a dead hotkey after 402: switch to Free Local Mode immediately.
+                configuration?.localDictationEnabled = true
+                onSubscriptionFallbackToLocal?()
+                levelTimer?.invalidate(); maxRecordingTimer?.invalidate(); recordingWarningTimer?.invalidate()
+                onRecordingNotice?(nil)
+                if let transcriber = localTranscriber, transcriber.isReady, let current = active {
+                    let pcm = (try? Data(contentsOf: recovery.audioURL(id))) ?? Data()
+                    if pcm.count >= 4800 {
+                        let turn = LocalPendingTurn(
+                            id: current.id,
+                            mode: current.mode,
+                            origin: current.origin,
+                            target: current.target,
+                            released: uptime(),
+                            submit: current.submit,
+                            cursorHandsFree: current.cursorHandsFree,
+                            screenTerms: current.screenTerms,
+                            localAudio: pcm,
+                            sink: current.sink
+                        )
+                        active = nil
+                        Log.engine.notice("subscription_402_fallback_local bytes=\(pcm.count, privacy: .public)")
+                        enqueueLocalTurn(turn)
+                        return
+                    }
+                    try? recovery.checkpoint(id, error: code, complete: true)
+                    try? recovery.retireCompleted(id)
+                    active = nil
+                    state = .idle
+                    Log.engine.notice("subscription_402_fallback_local_ready_idle")
+                    return
+                }
+                try? recovery.checkpoint(id, error: code, complete: true)
+                try? recovery.retireCompleted(id)
+                active = nil
+                Log.engine.error("subscription_402_local_model_missing")
+                fail(.server("subscription_required_local_missing"))
+                return
+            }
+            if tooShort {
+                try? recovery.seal(id)
+                try? recovery.checkpoint(id, error: code, complete: true)
+                try? recovery.retireCompleted(id)
+            } else {
+                try? recovery.seal(id); try? recovery.checkpoint(id, error: code)
+            }
+            let recoverLater = !isSubscription && !tooShort && Self.isAutoRecoverable(code) && configuration?.localDictationEnabled != true
+                && recoveryAttempts[id, default: 0] < 3
+            if recoverLater {
+                if let target, recoveryTargets[id] == nil { recoveryTargets[id] = target }
+                scheduleAutoRecovery(id, delay: wasRecovery ? 20 : 2)
+            }
             active = nil
+            if wasRecovery {
+                // Background attempts stay quiet; the menu keeps the item for a manual retry.
+                levelTimer?.invalidate(); maxRecordingTimer?.invalidate(); recordingWarningTimer?.invalidate()
+                state = .idle
+                onRecordingNotice?(recoverLater ? nil : .recoveryAvailable)
+                Log.engine.error("recovery_failed code=\(code, privacy: .public)")
+                return
+            }
             levelTimer?.invalidate(); maxRecordingTimer?.invalidate(); recordingWarningTimer?.invalidate()
-            onRecordingNotice?(.recoveryAvailable)
+            onRecordingNotice?(isSubscription ? nil : .recoveryAvailable)
             Log.engine.error("dictation_error code=\(code, privacy: .public)")
-            if code == "subscription_required" || code == "STT_subscription_required" {
+            if isSubscription {
                 fail(.server("subscription_required"))
             } else {
                 fail(.server("audio_saved"))
+            }
+            let generation = lifecycle.generation
+            let nonRecoverable = code == "subscription_required" || code == "STT_subscription_required"
+                || code == "not_signed_in" || code == "quota_exceeded"
+            if server != nil, configuration?.localDictationEnabled != true, !nonRecoverable {
+                Task { [weak self] in
+                    guard let self, self.lifecycle.accepts(generation), self.active == nil else { return }
+                    await self.pipeline?.maintain()
+                }
             }
         }
     }
@@ -1039,29 +1604,34 @@ public final class DictationEngine: DictationEngineProtocol {
     /// confirmed, it stays on the clipboard; a failure also shows the held pill (paste / discard).
     /// Each new dictation is reported through `onDelivery` (the app's local recent list).
     private func deliver(_ raw: String, to target: Paster.Target, id: String? = nil, mode: DictationMode = .bilingual,
-                         handsFree: Bool = false, submit: Bool = false) {
+                         handsFree: Bool = false, submit: Bool = false, autoEnter: Bool = false,
+                         allowNonBlockedApps: Bool = false, preserveActiveHUD: Bool = false) {
         let text = handsFree ? EndPhrase.strip(raw) : raw
-        if handsFree, text.isEmpty { state = .idle; Log.engine.info("handsfree_empty_after_end_phrase"); return }
+        if handsFree, text.isEmpty { if !preserveActiveHUD { state = .idle }; Log.engine.info("handsfree_empty_after_end_phrase"); return }
         let started = Date()
         let deliveryStarted = ProcessInfo.processInfo.systemUptime
+        var retired = false
         let report = { [weak self] (outcome: DeliveryOutcome) in
             guard let self, let id else { return }
             let elapsed = (ProcessInfo.processInfo.systemUptime - deliveryStarted) * 1000
             Log.paste.info("delivery_check_ms=\(elapsed, privacy: .public) outcome=\(outcome.rawValue, privacy: .public)")
             let saved = self.onDelivery?(DeliveryRecord(id: id, text: text, mode: mode, appName: target.app?.localizedName,
                                             bundleID: target.bundleID, at: started, outcome: outcome)) ?? false
-            if self.completeAudio[id] == true, saved || outcome == .pasted {
+            if !retired, saved || outcome == .pasted {
                 do {
                     try self.recovery.checkpoint(id, complete: true)
                     try self.recovery.retireCompleted(id)
                     self.completeAudio[id] = nil
+                    retired = true
                 }
                 catch { Log.engine.error("dictation_recovery_cleanup_deferred") }
             }
         }
         let heldOnClipboard = { [weak self] in
             guard let self else { return }
-            self.paster.copyToClipboard(text); self.state = .held(text); report(.failed)
+            self.paster.copyToClipboard(text)
+            if !preserveActiveHUD { self.state = .held(text) }
+            report(.failed)
         }
         // Save before attempting insertion, including AX failures and a crash during paste.
         report(.unconfirmed)
@@ -1088,7 +1658,9 @@ public final class DictationEngine: DictationEngineProtocol {
                 }
                 report(.pasted)
                 self.onHandsFreeInserted?(target.bundleID, text.trimmingCharacters(in: .whitespaces))
-                self.state = .pasted(text); self.after(0.4) { if case .pasted = self.state { self.state = .idle } }
+                if !preserveActiveHUD {
+                    self.state = .pasted(text); self.after(0.4) { if case .pasted = self.state { self.state = .idle } }
+                }
                 Log.paste.notice("handsfree_delivered method=\(typed ? "type" : "paste", privacy: .public) chars=\(text.count, privacy: .public) app=\(target.bundleID ?? "nil", privacy: .public)")
                 if submit {
                     self.after(typed ? 0.3 : 0.45) {
@@ -1100,18 +1672,29 @@ public final class DictationEngine: DictationEngineProtocol {
             }
             return
         }
+        let targetPID = target.app?.processIdentifier
+        let targetBundleID = target.bundleID
         let outcome = paster.paste(text, into: target) { [weak self] check in
             report(check == .confirmed ? .pasted : check == .unconfirmed ? .unconfirmed : .failed)
-            guard let self, check == .failed, self.active == nil else { return }
-            switch self.state {
-            case .idle, .pasted: self.state = .held(text) // the transcript is already on the clipboard
-            default: break
+            guard let self else { return }
+            if check == .failed {
+                if self.active == nil {
+                    switch self.state {
+                    case .idle, .pasted: self.state = .held(text) // the transcript is already on the clipboard
+                    default: break
+                    }
+                }
+                Log.paste.info("paste_failed_after_check")
+                _ = self.performAutoEnterIfSafe(mode: mode, targetBundleID: targetBundleID, targetPID: targetPID, check: check, autoEnter: autoEnter, allowNonBlockedApps: allowNonBlockedApps)
+                return
             }
-            Log.paste.info("paste_failed_after_check")
+            _ = self.performAutoEnterIfSafe(mode: mode, targetBundleID: targetBundleID, targetPID: targetPID, check: check, autoEnter: autoEnter, allowNonBlockedApps: allowNonBlockedApps)
         }
         switch outcome {
         case .pasted:
-            state = .pasted(text); after(0.4) { if case .pasted = self.state { self.state = .idle } }
+            if !preserveActiveHUD {
+                state = .pasted(text); after(0.4) { if case .pasted = self.state { self.state = .idle } }
+            }
             if let id, !id.hasPrefix(DeliveryRecord.diagnosticIDPrefix), recent.enabled, let insertion = paster.lastInsertion {
                 watch(id: id, pid: target.app?.processIdentifier, insertion)
             }
@@ -1124,7 +1707,9 @@ public final class DictationEngine: DictationEngineProtocol {
         case .ownWindow:
             if insertIntoOwnWindow?(text) == true {
                 if paster.keepTranscriptOnClipboard { paster.copyToClipboard(text) }
-                state = .pasted(text); after(0.4) { if case .pasted = self.state { self.state = .idle } }
+                if !preserveActiveHUD {
+                    state = .pasted(text); after(0.4) { if case .pasted = self.state { self.state = .idle } }
+                }
                 report(.pasted)
             } else {
                 heldOnClipboard()
@@ -1187,9 +1772,13 @@ public final class DictationEngine: DictationEngineProtocol {
     }
 
     private func microphoneFailed(_ code: String) {
-        guard active != nil else { return }
-        cancelActive(); fail(.microphoneDenied)
-        Log.engine.error("mic_failed code=\(code, privacy: .public)")
+        guard let current = active else { return }
+        let bytes = max(current.localAudio.count, recoveryRecords.first(where: { $0.id == current.id })?.audioBytes ?? 0)
+        Log.engine.error("mic_failed code=\(code, privacy: .public) audio_bytes=\(bytes, privacy: .public)")
+        cancelActive(dismissed: false, reason: "mic_\(code)")
+        if bytes < Self.substantialAudioBytes {
+            fail(.microphoneDenied)
+        }
     }
 
     private func after(_ seconds: Double, _ body: @escaping @MainActor () -> Void) {

@@ -14,8 +14,23 @@ final class PermissionCoach {
     private let size = NSSize(width: 328, height: 196)
     /// Supplied by the permission monitor so the card ticks itself and leaves when the switch is on.
     var isGranted: (Permission) -> Bool = { _ in false }
+    /// Set while guiding the "Press 🌐 key to → Do Nothing" fix instead of a permission.
+    private var fnFixed: (() -> Bool)?
 
     func show(for permission: Permission) {
+        fnFixed = nil
+        model.fnKey = false
+        present(permission)
+    }
+
+    /// Same card, three steps for System Settings › Keyboard › "Press 🌐 key to" → Do Nothing.
+    func showFnKeyFix(isFixed: @escaping () -> Bool) {
+        fnFixed = isFixed
+        model.fnKey = true
+        present(nil)
+    }
+
+    private func present(_ permission: Permission?) {
         shownAt = Date()
         model.permission = permission
         model.stage = .waiting
@@ -39,6 +54,7 @@ final class PermissionCoach {
 
     func hide() {
         timer?.invalidate(); timer = nil
+        fnFixed = nil
         panel?.orderOut(nil)
     }
 
@@ -51,8 +67,11 @@ final class PermissionCoach {
     }
 
     private func tick() {
-        guard let permission = model.permission else { hide(); return }
-        if isGranted(permission) {
+        let done: Bool
+        if let fnFixed { done = fnFixed() }
+        else if let permission = model.permission { done = isGranted(permission) }
+        else { hide(); return }
+        if done {
             if model.stage != .done {
                 model.stage = .done
                 shownAt = Date()
@@ -71,6 +90,7 @@ final class PermissionCoachModel: ObservableObject {
     enum Stage { case waiting, done }
     @Published var permission: Permission?
     @Published var stage: Stage = .waiting
+    @Published var fnKey = false
 }
 
 private struct PermissionCoachCard: View {
@@ -82,17 +102,23 @@ private struct PermissionCoachCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(nsImage: AppIdentity.icon).resizable().frame(width: 22, height: 22)
-                Text(verbatim: L(model.permission == .inputMonitoring ? "ob.perm.im.title" : "ob.perm.ax.title"))
+                Text(verbatim: model.fnKey ? L("keys.fn.fix") : L(model.permission == .inputMonitoring ? "ob.perm.im.title" : "ob.perm.ax.title"))
                     .font(Theme.display(15, semibold: true))
                 Spacer()
                 Button(L("ob.coach.hide"), action: onHide).buttonStyle(.plain)
                     .font(Theme.label(10)).foregroundStyle(Theme.muted(scheme))
             }
-            step(1, L("ob.coach.find", AppIdentity.name), done: model.stage == .done)
-            step(2, L("ob.coach.switch"), done: model.stage == .done)
-            if model.stage == .done {
-                Text(verbatim: L("ob.coach.done")).font(Theme.text(12, medium: true)).foregroundStyle(Theme.approval)
+            if model.fnKey {
+                step(1, L("keys.fn.step1"), done: true)
+                step(2, L("keys.fn.step2"), done: model.stage == .done)
+                step(3, L("keys.fn.step3"), done: model.stage == .done)
             } else {
+                step(1, L("ob.coach.find", AppIdentity.name), done: model.stage == .done)
+                step(2, L("ob.coach.switch"), done: model.stage == .done)
+            }
+            if model.stage == .done {
+                Text(verbatim: model.fnKey ? L("keys.fn.fixed") : L("ob.coach.done")).font(Theme.text(12, medium: true)).foregroundStyle(Theme.approval)
+            } else if !model.fnKey {
                 // If macOS did not list the app, the user adds it with the + button; show them the file to pick.
                 Button(L("ob.coach.missing")) { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
                     .buttonStyle(.plain).font(Theme.text(11)).underline().foregroundStyle(Theme.muted(scheme))

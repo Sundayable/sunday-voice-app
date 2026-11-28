@@ -192,8 +192,8 @@ final class ClipboardTidyTests: XCTestCase {
         XCTAssertNil(OnboardingModel.tidyProblem(ctrlOptY, tidyKeys: [.default], triggers: []))
         XCTAssertNil(OnboardingModel.tidyProblem(f18, tidyKeys: [.default], triggers: []))
         // Refused: mouse buttons and holds, bare letters / ⇧+letter, duplicates, ⌃⌥V, a dictation key.
-        XCTAssertEqual(OnboardingModel.tidyProblem(.mouseButton(number: 4, mode: .bilingual), tidyKeys: [], triggers: []), L("ob.keys.tidyKeysOnly"))
-        XCTAssertEqual(OnboardingModel.tidyProblem(.modifierHold(keys: [.fn], mode: .bilingual, holdMilliseconds: 180), tidyKeys: [], triggers: []), L("ob.keys.tidyKeysOnly"))
+        XCTAssertEqual(OnboardingModel.tidyProblem(.mouseButton(number: 4, mode: .bilingual), tidyKeys: [], triggers: []), L("keys.polishKeysOnly"))
+        XCTAssertEqual(OnboardingModel.tidyProblem(.modifierHold(keys: [.fn], mode: .bilingual, holdMilliseconds: 180), tidyKeys: [], triggers: []), L("keys.polishKeysOnly"))
         XCTAssertEqual(OnboardingModel.tidyProblem(.key(keyCode: UInt16(kVK_ANSI_T), modifiers: 0, mode: .bilingual), tidyKeys: [], triggers: []), L("settings.tidy.needsModifier"))
         XCTAssertEqual(OnboardingModel.tidyProblem(.key(keyCode: UInt16(kVK_ANSI_T), modifiers: UInt32(shiftKey), mode: .bilingual), tidyKeys: [], triggers: []), L("settings.tidy.needsModifier"))
         XCTAssertNotNil(OnboardingModel.tidyProblem(TidyShortcut.default.trigger, tidyKeys: [.default], triggers: []))

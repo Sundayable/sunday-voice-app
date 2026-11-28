@@ -39,9 +39,13 @@ final class BillingAndLanguageTests: XCTestCase {
     func testSubscriptionRequiredMapsToUpgradeActionAndLocalizedMessage() {
         XCTAssertEqual(AppDelegate.action(.server("subscription_required")), .openAccount)
         XCTAssertEqual(AppDelegate.action(.server("STT_subscription_required")), .openAccount)
+        XCTAssertEqual(AppDelegate.action(.server("local_model_missing")), .openLocalModel)
+        XCTAssertEqual(ClipboardTidy.action(TidyError.subscriptionRequired), .openAccount)
         let message = AppDelegate.message(.server("subscription_required"))
         XCTAssertFalse(message.isEmpty)
         XCTAssertNotEqual(message, "error.subscriptionRequired")
+        let tidyMsg = ClipboardTidy.message(TidyError.subscriptionRequired)
+        XCTAssertTrue(tidyMsg.contains("$19"))
     }
 
     func testBillingStringsExistInBothEnglishAndKorean() throws {
@@ -58,6 +62,39 @@ final class BillingAndLanguageTests: XCTestCase {
             "billing.pro.cancelsOn",
             "error.subscriptionRequired",
             "hud.button.upgradePro",
+            "hud.button.setupModel",
+            "tidy.error.subscriptionRequired",
+            "ob.welcome.pro.title",
+            "ob.welcome.pro.badge",
+            "ob.welcome.pro.body",
+            "ob.step.pro",
+            "ob.pro.title",
+            "ob.pro.body",
+            "ob.pro.useLocal",
+            "ob.step.localModel",
+            "ob.localModel.title",
+            "ob.localModel.body",
+            "ob.localModel.download",
+            "ob.localModel.lowDisk",
+            "ob.localModel.failed",
+            "ob.keys.proOnly",
+            "ob.keys.english.localDetail",
+            "ob.keys.tidy.localDetail",
+            "ob.try.body.local",
+            "consent.title",
+            "consent.noTrain",
+            "meeting.model.downloading",
+            "meeting.model.progress",
+            "meeting.model.preparing",
+            "meeting.model.ready",
+            "meeting.model.failed",
+            "meeting.model.lowDisk",
+        ]
+        let noGmailSlackKeys = [
+            "ob.welcome.pro.body",
+            "settings.proFeature.voiceBody",
+            "settings.proFeature.wordsBody",
+            "vocab.empty.guestBody",
         ]
         for language in ["en", "ko"] {
             let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
@@ -66,6 +103,12 @@ final class BillingAndLanguageTests: XCTestCase {
                 let value = bundle.localizedString(forKey: key, value: "__MISSING__", table: nil)
                 XCTAssertNotEqual(value, "__MISSING__", "Missing \(language) localization for \(key)")
                 XCTAssertFalse(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "Empty \(language) localization for \(key)")
+                XCTAssertFalse(value.contains("대표님"), "Unexpected 대표님 in \(language) \(key)")
+            }
+            for key in noGmailSlackKeys {
+                let value = bundle.localizedString(forKey: key, value: "__MISSING__", table: nil)
+                XCTAssertFalse(value.localizedCaseInsensitiveContains("Gmail"), "Unexpected Gmail in \(language) \(key): \(value)")
+                XCTAssertFalse(value.localizedCaseInsensitiveContains("Slack"), "Unexpected Slack in \(language) \(key): \(value)")
             }
         }
     }

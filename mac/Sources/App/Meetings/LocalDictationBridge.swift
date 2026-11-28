@@ -22,7 +22,17 @@ final class LocalDictationBridge: LocalDictationTranscriber {
     var isReady: Bool { whisper.isReady }
 
     func transcribe(pcm24kMono: Data, mode: DictationMode, promptTerms: [String]) async throws -> String {
-        try await whisper.transcribe(pcm24kMono: pcm24kMono, languageHint: nil, promptTerms: promptTerms)
+        let saved = UserDefaults.standard.string(forKey: "uiLanguage")
+        let preferred: String
+        if saved == "ko" { preferred = "ko" }
+        else if saved == "en" { preferred = "en" }
+        else { preferred = (Locale.preferredLanguages.first ?? "").hasPrefix("ko") ? "ko" : "en" }
+        return try await whisper.transcribe(
+            pcm24kMono: pcm24kMono,
+            languageHint: nil,
+            promptTerms: promptTerms,
+            preferredLanguage: preferred
+        )
     }
 
     func prewarm() async {

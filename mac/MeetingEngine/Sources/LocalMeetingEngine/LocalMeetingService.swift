@@ -1,9 +1,11 @@
 import AVFoundation
 import Combine
 import Foundation
+import OSLog
 
 @MainActor
 public final class LocalMeetingService: ObservableObject {
+    private let log = Logger(subsystem: "ca.sundayable.sunday-voice", category: "meetings")
     @Published public private(set) var phase: MeetingPhase = .idle
     @Published public private(set) var statusMessage = "Meeting audio stays on this Mac."
     @Published public private(set) var segments: [MeetingSegment] = []
@@ -263,6 +265,20 @@ public final class LocalMeetingService: ObservableObject {
     /// Call at launch; it is also run after each recording and after model setup.
     public func resumePendingTranscriptions() { startTranscription() }
 
+    /// Clears in-session deferrals and retries pending offline transcriptions immediately.
+    public func retryFailedTranscriptions() {
+        deferred.removeAll()
+        startTranscription()
+    }
+
+    /// Re-queues audio previously parked in `Recovery Audio` and starts offline transcription locally.
+    public func requeueParkedRecovery(in sessionDirectory: URL) async throws {
+        if let requeued = try await processor.requeueParkedRecovery(in: sessionDirectory) {
+            deferred.remove(requeued)
+            startTranscription()
+        }
+    }
+
     public var pendingTranscriptionCount: Int { processor.pending(excluding: activeSession).count }
 
     private func startTranscription() {
@@ -311,6 +327,7 @@ public final class LocalMeetingService: ObservableObject {
                     return
                 }
                 failed += 1
+                log.error("meeting_drain_failed err=\(String(describing: type(of: error)), privacy: .public) deferred_count=\(self.deferred.count + 1, privacy: .public)")
                 deferred.insert(next) // Tried again at the next launch, at most three times in total.
             }
         }

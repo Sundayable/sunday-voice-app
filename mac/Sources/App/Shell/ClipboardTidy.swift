@@ -214,7 +214,7 @@ final class ClipboardTidy {
                     }
                     hud.show(.error(L(key), failure == .permission ? .accessibilitySettings : .close))
                 } else {
-                    hud.show(.error(Self.message(error), .close))
+                    hud.show(.error(Self.message(error), Self.action(error)))
                 }
                 NSLog("tidy_result failed")
             }
@@ -248,10 +248,18 @@ final class ClipboardTidy {
         case .tooLong(let limit): return L("tidy.error.tooLong", limit.formatted())
         case .notSignedIn: return L("tidy.error.signIn")
         case .quotaExceeded: return L("error.quota")
+        case .subscriptionRequired: return L("tidy.error.subscriptionRequired")
         case .serverOutdated: return L("tidy.error.outdated")
         case .unsafe: return L("tidy.error.unsafe")
         case .failed(let code): return L("tidy.error.failedReason", reason(code))
         default: return L("tidy.error.failed")
+        }
+    }
+
+    static func action(_ error: Error) -> HUDAction {
+        switch error as? TidyError {
+        case .subscriptionRequired: return .openAccount
+        default: return .close
         }
     }
 

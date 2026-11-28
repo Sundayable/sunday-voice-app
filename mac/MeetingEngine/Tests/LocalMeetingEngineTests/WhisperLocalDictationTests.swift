@@ -63,4 +63,52 @@ final class WhisperLocalDictationTests: XCTestCase {
         let result = try await local.transcribe(pcm24kMono: pcm, languageHint: "ja", promptTerms: [])
         XCTAssertEqual(result, "")
     }
+
+    func testLocalDecodeRetriesWithPreferredAllowedLanguageWhenAutoDetectMisclassifies() async throws {
+        var fallbackCalls: [String] = []
+        let outcome = try await WhisperLocalDictation.decodeWithFallback(
+            audioSamplesCount: 16_000 * 11,
+            explicitHint: nil,
+            preferredLanguage: "ko",
+            primary: { ("ja", "こんにちは") },
+            fallback: { lang in
+                fallbackCalls.append(lang)
+                return lang == "ko" ? ("ko", "오늘 오후에 다시 확인해 볼게요.") : ("en", "")
+            }
+        )
+        XCTAssertEqual(fallbackCalls, ["ko"])
+        XCTAssertEqual(outcome.text, "오늘 오후에 다시 확인해 볼게요.")
+        XCTAssertEqual(outcome.fallbackUsed, "ko")
+        XCTAssertNil(outcome.emptyReason)
+    }
+
+    func testLocalDecodeRetriesWithoutPromptWhenPrimaryEmptyOnSubstantialAudio() async throws {
+        var fallbackCalls: [String] = []
+        let outcome = try await WhisperLocalDictation.decodeWithFallback(
+            audioSamplesCount: 16_000 * 8,
+            explicitHint: nil,
+            preferredLanguage: "en",
+            primary: { ("ko", "") },
+            fallback: { lang in
+                fallbackCalls.append(lang)
+                return lang == "ko" ? ("ko", "로컬 받아쓰기가 끊기지 않아요.") : ("en", "")
+            }
+        )
+        XCTAssertEqual(fallbackCalls, ["en", "ko"])
+        XCTAssertEqual(outcome.text, "로컬 받아쓰기가 끊기지 않아요.")
+        XCTAssertEqual(outcome.fallbackUsed, "ko")
+    }
+
+    func testLocalDecodeStillBlocksDisallowedScriptEvenAfterFallback() async throws {
+        let outcome = try await WhisperLocalDictation.decodeWithFallback(
+            audioSamplesCount: 16_000 * 5,
+            explicitHint: nil,
+            preferredLanguage: "ko",
+            primary: { ("ja", "おはようございます") },
+            fallback: { _ in ("ja", "おはようございます") }
+        )
+        XCTAssertEqual(outcome.text, "")
+        XCTAssertNil(outcome.fallbackUsed)
+        XCTAssertEqual(outcome.emptyReason, "disallowed_detected_ja_after_fallback")
+    }
 }

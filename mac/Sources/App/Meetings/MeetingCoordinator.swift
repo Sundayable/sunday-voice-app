@@ -467,18 +467,18 @@ final class MeetingCoordinator: ObservableObject {
     }
 
     /// Preparing a model does not itself start recording. Saved recordings are transcribed once it is ready.
-    func prepareModel() async {
+    func prepareModel(presentPanel: Bool = true) async {
         guard !shuttingDown, !isBusy else { return }
         operationInProgress = true
         phase = .preparing
-        statusMessage = "Downloading the local speech models…"
-        present(.setup)
+        statusMessage = L("meeting.model.downloading")
+        if presentPanel { present(.setup) }
         defer { operationInProgress = false }
         do {
             try await service.prepareModel()
             synchronize()
             if modelReady, case .idle = transcription {
-                statusMessage = "Speech models ready. Recordings are transcribed on this Mac after each meeting."
+                statusMessage = L("meeting.model.ready")
             }
         } catch {
             synchronize()

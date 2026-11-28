@@ -16,6 +16,7 @@ final class GuestAccessTests: XCTestCase {
         let auth = AuthService(storage: MemoryAuthStorage())
         auth.previewSignedIn(UserProfile(id: "g", email: "g@gmail.com", name: nil, picture: nil, guest: true))
         let model = OnboardingModel(auth: auth, api: APIClient(auth: auth), monitor: PermissionMonitor(), engine: MockDictationEngine())
+        model.billing = BillingSummary(plan: "pro", status: "active", entitled: true, pro_required: true, price_usd_monthly: 19, current_period_end: nil, cancel_at_period_end: false, has_customer: true, checkout_available: true)
         XCTAssertTrue(model.isGuest)
         model.step = .keys
         model.next()

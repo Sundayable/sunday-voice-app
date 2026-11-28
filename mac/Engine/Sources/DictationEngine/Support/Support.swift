@@ -33,6 +33,7 @@ struct FailureCode: Error, Equatable, Sendable, CustomStringConvertible {
     static let rewriteStreamError = FailureCode("rewrite_stream_error")
     static let notSignedIn = FailureCode("not_signed_in")
     static let quotaExceeded = FailureCode("quota_exceeded")
+    static let subscriptionRequired = FailureCode("subscription_required")
     static let serverOutdated = FailureCode("server_outdated")
 
     /// Map to the public error surface.

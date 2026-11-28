@@ -17,12 +17,35 @@ final class MockDictationEngine: DictationEngineProtocol {
     private var timer: Timer?
     func start(configuration: EngineConfiguration, tokens: AccessTokenProvider) throws {}
     func stop() { timer?.invalidate() }
+    var autoEnterModes: Set<DictationMode> = []
+    var autoEnterExtraBundleIDs: Set<String> = []
+    var sendByVoiceEnabled = true
+    var sendByVoicePhrases: [String] = EndPhrase.defaultSendPhrases
+    var sendByVoiceAllApps = false
     func updateTriggers(_ triggers: [TriggerKind]) {}
     func updateSoundsEnabled(_ enabled: Bool) {}
     func updateKeepTranscriptOnClipboard(_ enabled: Bool) {}
     func updateRecentContextEnabled(_ enabled: Bool) {}
+    func updateAutoEnterModes(_ modes: Set<DictationMode>, extraAllowedBundleIDs: Set<String>) {
+        autoEnterModes = modes
+        autoEnterExtraBundleIDs = extraAllowedBundleIDs
+    }
+    func updateSendByVoice(enabled: Bool, phrases: [String], allowOtherApps: Bool) {
+        sendByVoiceEnabled = enabled
+        sendByVoicePhrases = phrases
+        sendByVoiceAllApps = allowOtherApps
+    }
     func clearRecentContext() {}
+    /// Tests script what the next captures report (each entry is delivered once); nil = gallery demo (F18 after 0.5 s).
+    var scriptedCaptures: [TriggerKind?]?
     func captureNextTrigger(timeout: TimeInterval, _ handler: @escaping (TriggerKind?) -> Void) {
+        if timeout < 0.1 { return } // a cancel: drops the pending capture, reports nothing
+        if var queue = scriptedCaptures {
+            guard !queue.isEmpty else { return }
+            let next = queue.removeFirst(); scriptedCaptures = queue
+            DispatchQueue.main.async { handler(next) }
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { handler(.key(keyCode: 79, modifiers: 0, mode: .english)) }
     }
     func pasteLastResult() {}
